@@ -102,6 +102,106 @@ def extract_text_from_pdf(
         raise PDFParsingError(f"Unexpected error while reading PDF: {general_err}") from general_err
 
 
+def extract_text_from_docx(
+    file_source: Union[BinaryIO, bytes, str, Path],
+    min_characters: int = 30,
+) -> tuple[str, int]:
+    """
+    Extracts, normalizes, and cleans plain text from a DOCX file.
+    """
+    try:
+        import docx
+        if isinstance(file_source, (str, Path)):
+            docx_path = Path(file_source)
+            if not docx_path.is_file():
+                raise DocumentProcessingError(f"File not found: {docx_path}")
+            doc = docx.Document(str(docx_path))
+        elif isinstance(file_source, bytes):
+            doc = docx.Document(io.BytesIO(file_source))
+        else:
+            if hasattr(file_source, "seek"):
+                file_source.seek(0)
+            doc = docx.Document(file_source)
+
+        paragraphs: list[str] = [p.text for p in doc.paragraphs if p.text.strip()]
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip():
+                        paragraphs.append(cell.text.strip())
+
+        raw_text = "\n\n".join(paragraphs)
+        cleaned_text = clean_text(raw_text)
+
+        if len(cleaned_text.strip()) < min_characters:
+            raise EmptyDocumentError(
+                f"Extracted content from DOCX is too short ({len(cleaned_text.strip())} chars)."
+            )
+
+        return cleaned_text, 1
+    except DocumentProcessingError:
+        raise
+    except Exception as docx_err:
+        raise DocumentProcessingError(f"Failed to read DOCX file: {docx_err}") from docx_err
+
+
+def extract_text_from_txt(
+    file_source: Union[BinaryIO, bytes, str, Path],
+    min_characters: int = 30,
+) -> tuple[str, int]:
+    """
+    Extracts, normalizes, and cleans plain text from a TXT or Markdown file.
+    """
+    try:
+        if isinstance(file_source, (str, Path)):
+            txt_path = Path(file_source)
+            if not txt_path.is_file():
+                raise DocumentProcessingError(f"File not found: {txt_path}")
+            with open(txt_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        elif isinstance(file_source, bytes):
+            content = file_source.decode("utf-8", errors="replace")
+        else:
+            if hasattr(file_source, "seek"):
+                file_source.seek(0)
+            raw = file_source.read()
+            content = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+
+        cleaned_text = clean_text(content)
+
+        if len(cleaned_text.strip()) < min_characters:
+            raise EmptyDocumentError(
+                f"Extracted content from text file is too short ({len(cleaned_text.strip())} chars)."
+            )
+
+        return cleaned_text, 1
+    except DocumentProcessingError:
+        raise
+    except Exception as txt_err:
+        raise DocumentProcessingError(f"Failed to read text file: {txt_err}") from txt_err
+
+
+def extract_text_from_file(
+    file_source: Union[BinaryIO, bytes, str, Path],
+    filename: str,
+    min_characters: int = 30,
+) -> tuple[str, int]:
+    """
+    Unified extractor that routes to PDF, DOCX, or TXT parsers based on file extension.
+    """
+    ext = Path(filename).suffix.lower()
+    if ext == ".pdf":
+        return extract_text_from_pdf(file_source, min_characters=min_characters)
+    elif ext in [".docx", ".doc"]:
+        return extract_text_from_docx(file_source, min_characters=min_characters)
+    elif ext in [".txt", ".md", ".text"]:
+        return extract_text_from_txt(file_source, min_characters=min_characters)
+    else:
+        raise DocumentProcessingError(
+            f"Unsupported file format '{ext}'. Supported formats: .pdf, .docx, .txt"
+        )
+
+
 def sanitize_job_description(jd_text: str, min_characters: int = 30) -> str:
     """
     Cleans, validates, and normalizes a Job Description string.

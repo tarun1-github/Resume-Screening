@@ -34,3 +34,8 @@ dist/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local testing uploads
+data/*.docx
+data/*CV.pdf
+

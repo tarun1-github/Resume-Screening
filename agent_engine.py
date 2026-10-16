@@ -68,13 +68,27 @@ class MultiAgentEngine:
     SUPPORTED_PROVIDERS = {
         "OpenAI": {
             "default_model": "gpt-4o",
-            "fallback_model": "gpt-4o-mini",
+            "fallback_model": "o3-mini",
             "base_url": None,
+            "env_var": "OPENAI_API_KEY",
+        },
+        "Google (Gemini)": {
+            "default_model": "gemini-3.8-flash",
+            "fallback_model": "gemini-2.5-pro",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "env_var": "GOOGLE_API_KEY",
         },
         "Groq": {
             "default_model": "llama-3.3-70b-versatile",
             "fallback_model": "llama-3.1-8b-instant",
             "base_url": "https://api.groq.com/openai/v1",
+            "env_var": "GROQ_API_KEY",
+        },
+        "HuggingFace": {
+            "default_model": "meta-llama/Llama-3-70B-Instruct",
+            "fallback_model": "meta-llama/Llama-3-70B-Instruct",
+            "base_url": "https://api-inference.huggingface.co/v1/",
+            "env_var": "HUGGINGFACEHUB_ACCESS_TOKEN",
         },
     }
 
@@ -84,13 +98,24 @@ class MultiAgentEngine:
         api_key: Optional[str] = None,
         model: Optional[str] = None,
     ):
-        clean_provider = "Groq" if "groq" in provider.lower() else "OpenAI"
+        low_p = provider.lower()
+        if "google" in low_p or "gemini" in low_p:
+            clean_provider = "Google (Gemini)"
+        elif "hugging" in low_p or "hf" in low_p:
+            clean_provider = "HuggingFace"
+        elif "groq" in low_p:
+            clean_provider = "Groq"
+        else:
+            clean_provider = "OpenAI"
         self.provider = clean_provider
+
+        provider_config = self.SUPPORTED_PROVIDERS[self.provider]
+        env_var_name = provider_config["env_var"]
 
         # Resolve API Key
         self.api_key = (
             api_key
-            or os.getenv("OPENAI_API_KEY" if self.provider == "OpenAI" else "GROQ_API_KEY")
+            or os.getenv(env_var_name)
             or ""
         ).strip()
 
@@ -98,7 +123,7 @@ class MultiAgentEngine:
             raise AgentEngineError(
                 f"Missing API Key for {self.provider}. "
                 f"Please provide an API key in the UI or set the "
-                f"{'OPENAI_API_KEY' if self.provider == 'OpenAI' else 'GROQ_API_KEY'} environment variable."
+                f"{env_var_name} environment variable."
             )
 
         provider_config = self.SUPPORTED_PROVIDERS[self.provider]

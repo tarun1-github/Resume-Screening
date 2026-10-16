@@ -10,11 +10,12 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-# Load local environment variables if available
-load_dotenv()
+# Load local environment variables (.env) immediately
+load_dotenv(override=True)
 
 from parser import (
     DocumentProcessingError,
+    extract_text_from_file,
     extract_text_from_pdf,
     get_document_statistics,
     sanitize_job_description,
@@ -97,32 +98,82 @@ st.markdown(
         margin-right: 8px;
     }
 
-    /* 3D Neumorphic Button Styling */
+    /* 3D Neumorphic Primary Action Buttons */
     div.stButton > button {
         width: 100%;
         background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #9333ea 100%);
-        color: #ffffff;
-        font-weight: 700;
-        font-size: 1.05rem;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 1.05rem !important;
         padding: 0.8rem 1.8rem;
         border-radius: 14px;
         border: 1px solid rgba(255, 255, 255, 0.2);
         box-shadow: 0 10px 25px -5px rgba(124, 58, 237, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.25);
         transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.02em;
+    }
+
+    div.stButton > button p, div.stButton > button span {
+        color: #ffffff !important;
+        font-weight: 700 !important;
     }
 
     div.stButton > button:hover {
         transform: translateY(-2px);
         box-shadow: 0 16px 32px -6px rgba(147, 51, 234, 0.7), inset 0 2px 0 rgba(255, 255, 255, 0.4);
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
-        color: #ffffff;
+        color: #ffffff !important;
     }
 
     div.stButton > button:active {
         transform: translateY(1px);
         box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
+    }
+
+    /* High-Contrast "Load Executive Sample JD" Button Styling */
+    .sample-btn-wrapper div.stButton > button,
+    div.stButton > button[key="btn_load_sample_jd"],
+    button[data-testid="baseButton-secondary"] {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
+        color: #0f172a !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+        font-size: 0.95rem !important;
+        font-weight: 700 !important;
+        padding: 0.65rem 1.2rem !important;
+        text-transform: none !important;
+        letter-spacing: 0.01em !important;
+    }
+
+    .sample-btn-wrapper div.stButton > button p,
+    .sample-btn-wrapper div.stButton > button span,
+    div.stButton > button[key="btn_load_sample_jd"] p,
+    div.stButton > button[key="btn_load_sample_jd"] span,
+    button[data-testid="baseButton-secondary"] p,
+    button[data-testid="baseButton-secondary"] span {
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        font-size: 0.95rem !important;
+    }
+
+    .sample-btn-wrapper div.stButton > button:hover,
+    div.stButton > button[key="btn_load_sample_jd"]:hover,
+    button[data-testid="baseButton-secondary"]:hover {
+        background: #ffffff !important;
+        color: #4338ca !important;
+        border-color: #6366f1 !important;
+        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.3) !important;
+        transform: translateY(-1px) !important;
+    }
+
+    .sample-btn-wrapper div.stButton > button:hover p,
+    .sample-btn-wrapper div.stButton > button:hover span,
+    div.stButton > button[key="btn_load_sample_jd"]:hover p,
+    div.stButton > button[key="btn_load_sample_jd"]:hover span,
+    button[data-testid="baseButton-secondary"]:hover p,
+    button[data-testid="baseButton-secondary"]:hover span {
+        color: #4338ca !important;
     }
 
     /* Metric Container Overrides */
@@ -181,6 +232,59 @@ st.markdown(
         70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
         100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
     }
+
+    /* Fix Text Area Transparency, Overlaps & Wrapping */
+    .stTextArea, div[data-testid="stTextArea"] {
+        background-color: transparent !important;
+        margin-bottom: 0.5rem !important;
+    }
+
+    div[data-baseweb="textarea"] {
+        background-color: #0f172a !important;
+        border: 1px solid rgba(99, 102, 241, 0.4) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3) !important;
+        overflow: hidden !important;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    }
+
+    div[data-baseweb="textarea"]:focus-within {
+        border-color: #6366f1 !important;
+        box-shadow: 0 0 12px rgba(99, 102, 241, 0.35) !important;
+    }
+
+    .stTextArea textarea {
+        background-color: #0f172a !important;
+        color: #f8fafc !important;
+        border: none !important;
+        border-radius: 12px !important;
+        padding: 14px !important;
+        font-size: 0.95rem !important;
+        line-height: 1.6 !important;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        resize: vertical !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+
+    .stTextArea textarea:focus {
+        outline: none !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+    }
+
+    .stTextArea textarea::placeholder {
+        color: #64748b !important;
+        opacity: 0.8 !important;
+    }
+
+    /* File Uploader styling enhancements */
+    div[data-testid="stFileUploader"] {
+        background: rgba(15, 23, 42, 0.4);
+        border: 1px dashed rgba(99, 102, 241, 0.4);
+        border-radius: 12px;
+        padding: 8px;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -189,6 +293,8 @@ st.markdown(
 # --- INITIALIZE SESSION STATE ---
 if "jd_text" not in st.session_state:
     st.session_state.jd_text = ""
+if "jd_uploaded_filename" not in st.session_state:
+    st.session_state.jd_uploaded_filename = ""
 if "resume_text" not in st.session_state:
     st.session_state.resume_text = ""
 if "resume_pages" not in st.session_state:
@@ -224,6 +330,7 @@ Required Qualifications:
 
 def load_sample_jd():
     st.session_state.jd_text = SAMPLE_JD
+    st.session_state.jd_uploaded_filename = "Sample_Lead_AI_Engineer_JD.txt"
 
 
 # --- SIDEBAR: ENGINE SETTINGS ---
@@ -232,26 +339,54 @@ with st.sidebar:
 
     provider = st.selectbox(
         "LLM Provider",
-        options=["OpenAI", "Groq"],
+        options=["OpenAI", "Google (Gemini)", "Groq", "HuggingFace"],
         index=0,
-        help="Select OpenAI for GPT-4o or Groq for ultra-low latency Llama 3 models.",
+        help="Choose your preferred LLM provider for multi-agent reasoning.",
     )
 
     if provider == "OpenAI":
-        model_options = ["gpt-4o", "gpt-4o-mini"]
+        model_options = ["gpt-4o", "gpt-4.5", "o1", "o3-mini"]
         env_key = os.getenv("OPENAI_API_KEY", "")
-    else:
-        model_options = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+        key_label = "OpenAI API Key"
+        placeholder_text = "sk-proj-... or enter OpenAI API key"
+        help_text = "Pre-loaded from OPENAI_API_KEY in .env"
+    elif provider == "Google (Gemini)":
+        model_options = [
+            "gemini-3.8-flash",
+            "gemini-3.1-pro",
+            "gemini-2.5-pro",
+        ]
+        env_key = os.getenv("GOOGLE_API_KEY", "")
+        key_label = "Google (Gemini) API Key"
+        placeholder_text = "AIzaSy... or enter Google API key"
+        help_text = "Pre-loaded from GOOGLE_API_KEY in .env"
+    elif provider == "Groq":
+        model_options = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+        ]
         env_key = os.getenv("GROQ_API_KEY", "")
+        key_label = "Groq API Key"
+        placeholder_text = "gsk_... or enter Groq API key"
+        help_text = "Pre-loaded from GROQ_API_KEY in .env"
+    else:  # HuggingFace
+        model_options = [
+            "meta-llama/Llama-3-70B-Instruct",
+        ]
+        env_key = os.getenv("HUGGINGFACEHUB_ACCESS_TOKEN", "")
+        key_label = "HuggingFace Access Token"
+        placeholder_text = "hf_... or enter HuggingFace token"
+        help_text = "Pre-loaded from HUGGINGFACEHUB_ACCESS_TOKEN in .env"
 
     selected_model = st.selectbox("Inference Model", options=model_options, index=0)
 
     api_key_input = st.text_input(
-        f"{provider} API Key",
+        key_label,
         value=env_key,
         type="password",
-        placeholder=f"Enter {provider} API key...",
-        help="Keys are used strictly in-session and never stored on disk.",
+        placeholder=placeholder_text,
+        help=help_text,
+        key=f"api_key_input_{provider}",
     )
 
     st.markdown("---")
@@ -279,6 +414,7 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🧹 Reset Screening Session", use_container_width=True):
         st.session_state.jd_text = ""
+        st.session_state.jd_uploaded_filename = ""
         st.session_state.resume_text = ""
         st.session_state.resume_pages = 0
         st.session_state.resume_filename = ""
@@ -298,36 +434,70 @@ col_jd, col_resume = st.columns(2, gap="large")
 
 with col_jd:
     st.markdown("#### 📋 1. Target Role & Job Description")
-    st.button(
+    st.caption("Upload a JD document or paste/edit role specifications below:")
+
+    # High-contrast, dark-text Sample JD Button
+    st.markdown('<div class="sample-btn-wrapper">', unsafe_allow_html=True)
+    if st.button(
         "⚡ Load Executive Sample JD",
-        on_click=load_sample_jd,
+        key="btn_load_sample_jd",
         help="Quickly populate a standard Senior AI Engineer Job Description.",
+    ):
+        load_sample_jd()
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Option A: File Uploader for JD (.pdf, .docx, .txt)
+    uploaded_jd = st.file_uploader(
+        "Upload Job Description (.pdf, .docx, .txt)",
+        type=["pdf", "docx", "txt"],
+        key="jd_file_uploader",
+        help="Upload JD as PDF, DOCX, or TXT file to automatically extract job requirements.",
     )
 
+    if uploaded_jd is not None:
+        if uploaded_jd.name != st.session_state.jd_uploaded_filename:
+            try:
+                extracted_jd, _ = extract_text_from_file(uploaded_jd, uploaded_jd.name)
+                st.session_state.jd_text = extracted_jd
+                st.session_state.jd_uploaded_filename = uploaded_jd.name
+                st.toast(f"✅ Loaded JD from: {uploaded_jd.name}")
+            except DocumentProcessingError as jd_err:
+                st.error(f"❌ JD Extraction Error: {jd_err}")
+            except Exception as unk_err:
+                st.error(f"❌ Unexpected Error reading JD: {unk_err}")
+
+    # Option B: Styled Text Area for manual pasting or fine-tuning
     jd_area = st.text_area(
         "Job Description text",
         value=st.session_state.jd_text,
-        height=300,
-        placeholder="Paste full Job Description (role requirements, must-haves, stack)...",
+        height=260,
+        placeholder="Or paste/edit the Job Description text directly here (requirements, qualifications, tech stack)...",
         label_visibility="collapsed",
+        key="jd_editor_area",
     )
-    # Sync with session state
+    # Dynamically sync combined contents
     st.session_state.jd_text = jd_area
 
     if st.session_state.jd_text:
         jd_stats = get_document_statistics(st.session_state.jd_text)
+        file_indicator = f'<span class="stat-chip">Source: {st.session_state.jd_uploaded_filename}</span>' if st.session_state.jd_uploaded_filename else ''
         st.markdown(
+            f'{file_indicator}'
             f'<span class="stat-chip">Words: {jd_stats["word_count"]}</span>'
-            f'<span class="stat-chip">Chars: {jd_stats["character_count"]}</span>',
+            f'<span class="stat-chip">Chars: {jd_stats["character_count"]}</span>'
+            f'<span class="stat-chip">Est. Read: {jd_stats["estimated_reading_minutes"]} min</span>',
             unsafe_allow_html=True,
         )
 
 with col_resume:
     st.markdown("#### 📄 2. Candidate Resume (PDF)")
+    st.caption("Upload candidate CV (.pdf) for semantic multi-agent screening:")
     uploaded_pdf = st.file_uploader(
         "Upload candidate CV (.pdf)",
         type=["pdf"],
         help="Upload candidate PDF resume for semantic multi-agent screening.",
+        key="resume_file_uploader",
     )
 
     if uploaded_pdf is not None:
@@ -367,7 +537,7 @@ if run_btn:
     # 1. Validation Checks
     active_key = api_key_input.strip() or env_key.strip()
     if not active_key:
-        st.error(f"⚠️ Please enter your {provider} API key in the sidebar to proceed.")
+        st.error(f"⚠️ Please enter your {provider} API key / access token in the sidebar to proceed.")
         st.stop()
 
     try:
