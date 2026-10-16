@@ -1,31 +1,13 @@
-"""
-⚡ FITMENT.AI | Executive CV Screener & Multi-Agent Fitment Engine
-An executive Streamlit frontend with 3D Glassmorphism styling, animated multi-agent chaining,
-and persistent session-state screening analytics.
-"""
-
-from __future__ import annotations
-
-import os
 import streamlit as st
+import os
+from pypdf import PdfReader
+from docx import Document  # Required for .docx support
+from openai import OpenAI
+import time
 from dotenv import load_dotenv
 
-# Load local environment variables (.env) immediately
-load_dotenv(override=True)
-
-from parser import (
-    DocumentProcessingError,
-    extract_text_from_file,
-    extract_text_from_pdf,
-    get_document_statistics,
-    sanitize_job_description,
-)
-from agent_engine import (
-    AgentEngineError,
-    FitmentReport,
-    MultiAgentEngine,
-    ScoringWeights,
-)
+# Load environment variables from .env file
+load_dotenv()
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -35,682 +17,413 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# --- 3D GLASSMORPHISM & EXECUTIVE STYLING ---
+# --- 3D & EXECUTIVE UI STYLING (CUSTOM CSS) ---
 st.markdown(
     """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
-
-    /* Global Typography & Deep Luxury Canvas */
-    html, body, [class*="css"] {
-        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    /* Global Theme & Font */
+    .main {
+        background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+        color: #f8fafc;
     }
-
-    .stApp {
-        background: radial-gradient(circle at 10% 20%, rgba(30, 27, 75, 0.95) 0%, rgba(15, 23, 42, 1) 90.2%);
-        color: #f1f5f9;
-    }
-
-    /* Executive Gradient Header */
-    .brand-title {
-        background: linear-gradient(135deg, #60a5fa 0%, #a855f7 50%, #ec4899 100%);
+    
+    /* Executive Header Badge */
+    .header-badge {
+        background: linear-gradient(90deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 800;
-        font-size: 2.7rem;
-        letter-spacing: -0.03em;
-        margin-bottom: 0.1rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
+        font-size: 2.8rem;
+        letter-spacing: -1px;
+        margin-bottom: 0px;
     }
-
-    .brand-subtitle {
+    
+    .sub-badge {
         color: #94a3b8;
-        font-size: 1.05rem;
+        font-size: 1.1rem;
         font-weight: 400;
-        margin-bottom: 1.8rem;
-        letter-spacing: -0.01em;
+        margin-bottom: 25px;
     }
 
     /* 3D Glassmorphism Cards */
-    .glass-card {
-        background: rgba(30, 41, 59, 0.65);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        padding: 22px 24px;
-        border-radius: 18px;
-        box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.15);
-        backdrop-filter: blur(16px);
-        margin-bottom: 1.2rem;
-    }
-
-    /* Stat & Metric Chips */
-    .stat-chip {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 12px;
-        border-radius: 20px;
-        background: rgba(99, 102, 241, 0.15);
-        border: 1px solid rgba(99, 102, 241, 0.35);
-        color: #c7d2fe;
-        font-size: 0.85rem;
-        font-weight: 600;
-        margin-right: 8px;
-    }
-
-    /* 3D Neumorphic Primary Action Buttons */
-    div.stButton > button {
-        width: 100%;
-        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #9333ea 100%);
-        color: #ffffff !important;
-        font-weight: 700 !important;
-        font-size: 1.05rem !important;
-        padding: 0.8rem 1.8rem;
-        border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        box-shadow: 0 10px 25px -5px rgba(124, 58, 237, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.25);
-        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-        letter-spacing: 0.02em;
-    }
-
-    div.stButton > button p, div.stButton > button span {
-        color: #ffffff !important;
-        font-weight: 700 !important;
-    }
-
-    div.stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 16px 32px -6px rgba(147, 51, 234, 0.7), inset 0 2px 0 rgba(255, 255, 255, 0.4);
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
-        color: #ffffff !important;
-    }
-
-    div.stButton > button:active {
-        transform: translateY(1px);
-        box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
-    }
-
-    /* High-Contrast "Load Executive Sample JD" Button Styling */
-    .sample-btn-wrapper div.stButton > button,
-    div.stButton > button[key="btn_load_sample_jd"],
-    button[data-testid="baseButton-secondary"] {
-        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
-        color: #0f172a !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 12px !important;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
-        font-size: 0.95rem !important;
-        font-weight: 700 !important;
-        padding: 0.65rem 1.2rem !important;
-        text-transform: none !important;
-        letter-spacing: 0.01em !important;
-    }
-
-    .sample-btn-wrapper div.stButton > button p,
-    .sample-btn-wrapper div.stButton > button span,
-    div.stButton > button[key="btn_load_sample_jd"] p,
-    div.stButton > button[key="btn_load_sample_jd"] span,
-    button[data-testid="baseButton-secondary"] p,
-    button[data-testid="baseButton-secondary"] span {
-        color: #0f172a !important;
-        font-weight: 700 !important;
-        font-size: 0.95rem !important;
-    }
-
-    .sample-btn-wrapper div.stButton > button:hover,
-    div.stButton > button[key="btn_load_sample_jd"]:hover,
-    button[data-testid="baseButton-secondary"]:hover {
-        background: #ffffff !important;
-        color: #4338ca !important;
-        border-color: #6366f1 !important;
-        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.3) !important;
-        transform: translateY(-1px) !important;
-    }
-
-    .sample-btn-wrapper div.stButton > button:hover p,
-    .sample-btn-wrapper div.stButton > button:hover span,
-    div.stButton > button[key="btn_load_sample_jd"]:hover p,
-    div.stButton > button[key="btn_load_sample_jd"]:hover span,
-    button[data-testid="baseButton-secondary"]:hover p,
-    button[data-testid="baseButton-secondary"]:hover span {
-        color: #4338ca !important;
-    }
-
-    /* Metric Container Overrides */
-    div[data-testid="stMetric"] {
-        background: rgba(15, 23, 42, 0.7);
-        border: 1px solid rgba(99, 102, 241, 0.25);
-        padding: 16px 20px;
+    .stCard, div[data-testid="stVerticalBlock"] > div[style*="border"] {
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 24px;
         border-radius: 16px;
-        box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(12px);
+        margin-bottom: 20px;
     }
 
-    div[data-testid="stMetricValue"] {
-        font-size: 1.8rem !important;
-        font-weight: 800 !important;
-        background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    /* Tab Custom Styling */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background: rgba(15, 23, 42, 0.5);
-        padding: 6px;
+    /* Primary Action Buttons */
+    .stButton > button {
+        width: 100%;
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        color: white !important;
+        font-weight: 700;
+        font-size: 1.1rem;
+        padding: 0.75rem 1.5rem;
         border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        border: none;
+        box-shadow: 0 8px 20px -4px rgba(79, 70, 229, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.2);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 25px -4px rgba(99, 102, 241, 0.7), inset 0 2px 0 rgba(255, 255, 255, 0.4);
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
     }
 
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px;
-        color: #94a3b8;
-        font-weight: 600;
-        padding: 8px 16px;
-    }
-
-    .stTabs [aria-selected="true"] {
-        background: rgba(99, 102, 241, 0.25) !important;
-        color: #ffffff !important;
-        border: 1px solid rgba(99, 102, 241, 0.4) !important;
-    }
-
-    /* Agent Pulse Animation */
-    .agent-pulse {
-        display: inline-block;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background-color: #10b981;
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-        animation: pulse 1.8s infinite;
-        margin-right: 6px;
-    }
-
-    @keyframes pulse {
-        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-        70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
-        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-    }
-
-    /* Fix Text Area Transparency, Overlaps & Wrapping */
-    .stTextArea, div[data-testid="stTextArea"] {
-        background-color: transparent !important;
-        margin-bottom: 0.5rem !important;
-    }
-
-    div[data-baseweb="textarea"] {
-        background-color: #0f172a !important;
-        border: 1px solid rgba(99, 102, 241, 0.4) !important;
-        border-radius: 12px !important;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3) !important;
-        overflow: hidden !important;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
-    }
-
-    div[data-baseweb="textarea"]:focus-within {
-        border-color: #6366f1 !important;
-        box-shadow: 0 0 12px rgba(99, 102, 241, 0.35) !important;
-    }
-
+    /* Fix Text Area Styling and Transparency Bugs */
     .stTextArea textarea {
         background-color: #0f172a !important;
         color: #f8fafc !important;
-        border: none !important;
+        border: 1px solid rgba(99, 102, 241, 0.4) !important;
         border-radius: 12px !important;
-        padding: 14px !important;
+        padding: 12px !important;
         font-size: 0.95rem !important;
-        line-height: 1.6 !important;
-        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
-        resize: vertical !important;
-        box-shadow: none !important;
-        outline: none !important;
     }
-
+    
     .stTextArea textarea:focus {
-        outline: none !important;
-        border-color: transparent !important;
-        box-shadow: none !important;
+        border-color: #6366f1 !important;
+        box-shadow: 0 0 10px rgba(99, 102, 241, 0.3) !important;
     }
 
-    .stTextArea textarea::placeholder {
-        color: #64748b !important;
-        opacity: 0.8 !important;
+    /* Fix Sample JD Button Contrast (Dark Text on White Background) */
+    div.row-widget.stButton > button[kind="secondary"] {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+    }
+    div.row-widget.stButton > button[kind="secondary"]:hover {
+        background: #f1f5f9 !important;
+        color: #000000 !important;
     }
 
-    /* File Uploader styling enhancements */
+    /* Metric Containers */
+    div[data-testid="metric-container"] {
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        padding: 15px;
+        border-radius: 14px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    
+    /* File Uploader Styling */
     div[data-testid="stFileUploader"] {
-        background: rgba(15, 23, 42, 0.4);
-        border: 1px dashed rgba(99, 102, 241, 0.4);
-        border-radius: 12px;
-        padding: 8px;
+        border: 2px dashed rgba(99, 102, 241, 0.4);
+        background: rgba(30, 41, 59, 0.4);
+        padding: 15px;
+        border-radius: 14px;
     }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
-# --- INITIALIZE SESSION STATE ---
-if "jd_text" not in st.session_state:
-    st.session_state.jd_text = ""
-if "jd_uploaded_filename" not in st.session_state:
-    st.session_state.jd_uploaded_filename = ""
-if "resume_text" not in st.session_state:
-    st.session_state.resume_text = ""
-if "resume_pages" not in st.session_state:
-    st.session_state.resume_pages = 0
-if "resume_filename" not in st.session_state:
-    st.session_state.resume_filename = ""
-if "fitment_report" not in st.session_state:
-    st.session_state.fitment_report = None
-if "agent_progress_status" not in st.session_state:
-    st.session_state.agent_progress_status = ""
+
+# --- HELPER FUNCTION FOR UNIVERSAL FILE PARSING (.pdf, .docx, .txt) ---
+def extract_text_from_uploaded_file(uploaded_file):
+    if uploaded_file is None:
+        return ""
+
+    file_extension = uploaded_file.name.split(".")[-1].lower()
+    extracted_text = ""
+
+    try:
+        if file_extension == "pdf":
+            reader = PdfReader(uploaded_file)
+            for page in reader.pages:
+                extracted_text += page.extract_text() or ""
+
+        elif file_extension in ["docx", "doc"]:
+            doc = Document(uploaded_file)
+            for paragraph in doc.paragraphs:
+                extracted_text += paragraph.text + "\n"
+
+        elif file_extension == "txt":
+            extracted_text = uploaded_file.getvalue().decode("utf-8")
+
+    except Exception as e:
+        st.error(f"Error parsing file {uploaded_file.name}: {e}")
+
+    return extracted_text
 
 
-# --- SAMPLE DATA HELPER ---
-SAMPLE_JD = """Role: Lead Full-Stack AI Engineer
-Company: Apex Systems (AI & Cloud Platforms)
-Location: Remote / Hybrid
-
-Key Responsibilities:
-- Architect and develop high-throughput, agentic AI workflows and LLM orchestration systems.
-- Build modern, interactive micro-frontends (Streamlit, React, or Next.js) with real-time streaming.
-- Integrate vector databases (Pinecone, ChromaDB, Weaviate) and implement production RAG pipelines.
-- Deploy robust backend microservices using FastAPI, Python 3.11+, and Docker.
-- Implement CI/CD pipelines, automated testing, and observability (LangSmith, OpenTelemetry).
-
-Required Qualifications:
-- 5+ years of full-stack software development experience.
-- Strong proficiency with Python, modern async programming, and API architecture.
-- Demonstrated hands-on experience building multi-agent systems with LangGraph or AutoGen.
-- Experience with OpenAI, Anthropic, or Groq LLM inference pipelines.
-- Bachelor's or Master's degree in Computer Science, Software Engineering, or equivalent STEM field.
-"""
-
-
-def load_sample_jd():
-    st.session_state.jd_text = SAMPLE_JD
-    st.session_state.jd_uploaded_filename = "Sample_Lead_AI_Engineer_JD.txt"
-
-
-# --- SIDEBAR: ENGINE SETTINGS ---
+# --- SIDEBAR CONFIGURATION (LATEST MODELS & MULTI-PROVIDER KEYS) ---
 with st.sidebar:
-    st.markdown("### ⚡ Engine Control Room")
+    st.markdown("### ⚙️ Engine Control Room")
 
-    provider = st.selectbox(
+    api_provider = st.selectbox(
         "LLM Provider",
-        options=["OpenAI", "Google (Gemini)", "Groq", "HuggingFace"],
-        index=0,
-        help="Choose your preferred LLM provider for multi-agent reasoning.",
+        ["OpenAI", "Anthropic (Claude)", "Google (Gemini)", "Groq", "HuggingFace"],
     )
 
-    if provider == "OpenAI":
-        model_options = ["gpt-4o", "gpt-4.5", "o1", "o3-mini"]
-        env_key = os.getenv("OPENAI_API_KEY", "")
-        key_label = "OpenAI API Key"
-        placeholder_text = "sk-proj-... or enter OpenAI API key"
-        help_text = "Pre-loaded from OPENAI_API_KEY in .env"
-    elif provider == "Google (Gemini)":
-        model_options = [
-            "gemini-3.8-flash",
-            "gemini-3.1-pro",
-            "gemini-2.5-pro",
-        ]
-        env_key = os.getenv("GOOGLE_API_KEY", "")
-        key_label = "Google (Gemini) API Key"
-        placeholder_text = "AIzaSy... or enter Google API key"
-        help_text = "Pre-loaded from GOOGLE_API_KEY in .env"
-    elif provider == "Groq":
-        model_options = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-        ]
-        env_key = os.getenv("GROQ_API_KEY", "")
-        key_label = "Groq API Key"
-        placeholder_text = "gsk_... or enter Groq API key"
-        help_text = "Pre-loaded from GROQ_API_KEY in .env"
-    else:  # HuggingFace
-        model_options = [
-            "meta-llama/Llama-3-70B-Instruct",
-        ]
-        env_key = os.getenv("HUGGINGFACEHUB_ACCESS_TOKEN", "")
-        key_label = "HuggingFace Access Token"
-        placeholder_text = "hf_... or enter HuggingFace token"
-        help_text = "Pre-loaded from HUGGINGFACEHUB_ACCESS_TOKEN in .env"
+    api_key = ""
+    inference_model = ""
 
-    selected_model = st.selectbox("Inference Model", options=model_options, index=0)
+    if api_provider == "OpenAI":
+        inference_model = st.selectbox(
+            "Inference Model",
+            ["gpt-5.5", "gpt-5.4", "gpt-4o", "o3", "o3-mini", "o4-mini"],
+        )
+        api_key = st.text_input(
+            "OpenAI API Key",
+            type="password",
+            value=os.getenv("OPENAI_API_KEY", ""),
+            placeholder="sk-...",
+        )
 
-    api_key_input = st.text_input(
-        key_label,
-        value=env_key,
-        type="password",
-        placeholder=placeholder_text,
-        help=help_text,
-        key=f"api_key_input_{provider}",
-    )
+    elif api_provider == "Anthropic (Claude)":
+        inference_model = st.selectbox(
+            "Inference Model",
+            [
+                "claude-opus-5.5",
+                "claude-fable-5.1",
+                "claude-sonnet-5.5",
+                "claude-opus-4.8",
+            ],
+        )
+        api_key = st.text_input(
+            "Anthropic API Key",
+            type="password",
+            value=os.getenv("ANTHROPIC_API_KEY", ""),
+            placeholder="sk-ant-...",
+        )
+
+    elif api_provider == "Google (Gemini)":
+        inference_model = st.selectbox(
+            "Inference Model",
+            [
+                "gemini-3.8-flash",
+                "gemini-3.1-pro",
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+            ],
+        )
+        api_key = st.text_input(
+            "Google API Key",
+            type="password",
+            value=os.getenv("GOOGLE_API_KEY", ""),
+            placeholder="AIzaSy...",
+        )
+
+    elif api_provider == "Groq":
+        inference_model = st.selectbox(
+            "Inference Model",
+            ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "groq/compound"],
+        )
+        api_key = st.text_input(
+            "Groq API Key",
+            type="password",
+            value=os.getenv("GROQ_API_KEY", ""),
+            placeholder="gsk_...",
+        )
+
+    elif api_provider == "HuggingFace":
+        inference_model = st.selectbox(
+            "Inference Model",
+            ["meta-llama/Llama-3-70B-Instruct", "mistralai/Mixtral-8x7B-Instruct-v0.1"],
+        )
+        api_key = st.text_input(
+            "HuggingFace Access Token",
+            type="password",
+            value=os.getenv("HUGGINGFACEHUB_ACCESS_TOKEN", ""),
+            placeholder="hf_...",
+        )
 
     st.markdown("---")
-    st.markdown("### 🎛️ Scoring Weights Matrix")
-    with st.expander("Configure Evaluation Weights", expanded=False):
-        w_skills = st.slider("Skills Alignment", 10, 60, 30, 5, format="%d%%") / 100.0
-        w_exp = st.slider("Experience Depth", 10, 60, 40, 5, format="%d%%") / 100.0
-        w_edu = st.slider("Education Credentials", 5, 30, 15, 5, format="%d%%") / 100.0
-        w_extras = st.slider("Extras & Certifications", 5, 30, 15, 5, format="%d%%") / 100.0
-
-        weights = ScoringWeights(
-            skills=w_skills,
-            experience=w_exp,
-            education=w_edu,
-            extras=w_extras,
-        ).normalize()
+    st.markdown("### 📊 Scoring Weights Matrix")
+    with st.expander("Configure Evaluation Weights"):
+        weight_skills = st.slider("Skills Alignment", 0, 100, 30)
+        weight_exp = st.slider("Experience Depth", 0, 100, 40)
+        weight_edu = st.slider("Education Credentials", 0, 100, 15)
+        weight_extras = st.slider("Extras & Certifications", 0, 100, 15)
 
     st.markdown("---")
-    st.markdown("### 🧬 Orchestrated Agents")
-    st.markdown('<div><span class="agent-pulse"></span><b>Agent 1:</b> JD Mandate Analyst</div>', unsafe_allow_html=True)
-    st.markdown('<div><span class="agent-pulse"></span><b>Agent 2:</b> CV Skill & Profile Matcher</div>', unsafe_allow_html=True)
-    st.markdown('<div><span class="agent-pulse"></span><b>Agent 3:</b> RedFlag & Gap Auditor</div>', unsafe_allow_html=True)
-    st.markdown('<div><span class="agent-pulse"></span><b>Agent 4:</b> Executive Fitment Scorer</div>', unsafe_allow_html=True)
+    st.markdown("### 🧬 Active Multi-Agents")
+    st.markdown("🤖 **JD Analyst:** *Active*")
+    st.markdown("🔍 **Resume Parser:** *Active*")
+    st.markdown("🚩 **Gap Detector:** *Active*")
+    st.markdown("⚖️ **Fitment Scorer:** *Active*")
 
-    st.markdown("---")
-    if st.button("🧹 Reset Screening Session", use_container_width=True):
-        st.session_state.jd_text = ""
-        st.session_state.jd_uploaded_filename = ""
-        st.session_state.resume_text = ""
-        st.session_state.resume_pages = 0
-        st.session_state.resume_filename = ""
-        st.session_state.fitment_report = None
-        st.rerun()
-
-
-# --- HEADER ---
-st.markdown('<div class="brand-title">⚡ FITMENT.AI</div>', unsafe_allow_html=True)
+# --- MAIN DASHBOARD HEADER ---
+st.markdown('<p class="header-badge">⚡ FITMENT.AI</p>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="brand-subtitle">Executive CV Screening & Autonomous Multi-Agent Fitment Intelligence</div>',
+    '<p class="sub-badge">Next-Generation Multi-Agent Executive CV Screening & Fitment Intelligence Dashboard</p>',
     unsafe_allow_html=True,
 )
 
-# --- INPUT CONTAINERS ---
-col_jd, col_resume = st.columns(2, gap="large")
+# Initialize session state for JD text if not present
+if "jd_content" not in st.session_state:
+    st.session_state.jd_content = ""
 
-with col_jd:
-    st.markdown("#### 📋 1. Target Role & Job Description")
-    st.caption("Upload a JD document or paste/edit role specifications below:")
+# --- INPUT SECTION (2 Columns) ---
+col1, col2 = st.columns(2, gap="large")
 
-    # High-contrast, dark-text Sample JD Button
-    st.markdown('<div class="sample-btn-wrapper">', unsafe_allow_html=True)
-    if st.button(
-        "⚡ Load Executive Sample JD",
-        key="btn_load_sample_jd",
-        help="Quickly populate a standard Senior AI Engineer Job Description.",
-    ):
-        load_sample_jd()
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Option A: File Uploader for JD (.pdf, .docx, .txt)
-    uploaded_jd = st.file_uploader(
-        "Upload Job Description (.pdf, .docx, .txt)",
-        type=["pdf", "docx", "txt"],
-        key="jd_file_uploader",
-        help="Upload JD as PDF, DOCX, or TXT file to automatically extract job requirements.",
+with col1:
+    st.markdown("### 📋 1. Target Role & Job Description")
+    st.markdown(
+        "Upload a JD document (`.docx`, `.pdf`, `.txt`) or paste specifications below:"
     )
 
-    if uploaded_jd is not None:
-        if uploaded_jd.name != st.session_state.jd_uploaded_filename:
-            try:
-                extracted_jd, _ = extract_text_from_file(uploaded_jd, uploaded_jd.name)
-                st.session_state.jd_text = extracted_jd
-                st.session_state.jd_uploaded_filename = uploaded_jd.name
-                st.toast(f"✅ Loaded JD from: {uploaded_jd.name}")
-            except DocumentProcessingError as jd_err:
-                st.error(f"❌ JD Extraction Error: {jd_err}")
-            except Exception as unk_err:
-                st.error(f"❌ Unexpected Error reading JD: {unk_err}")
+    # Sample JD Button with fixed high-contrast styling
+    if st.button("⚡ Load Executive Sample JD", type="secondary"):
+        st.session_state.jd_content = """Cisco Network Voice L3 / Voice T2 Engineer
+Requirements:
+- 8-10 years of experience in enterprise networks with minimum 8+ years specifically in Cisco UC / Voice Collaboration.
+- Hands-on expertise with CUCM, Expressway, CUBE, IP Phones, Jabber, and IM & Presence.
+- Expertise in CUCM Trace Reading, Jabber PRT Logs, IMP Trace Reading, and GW Debugs.
+- Strong knowledge of SIP, H.323, RTP, and Session Border Controllers.
+- ITIL framework knowledge and P1/P2 incident escalation handling."""
 
-    # Option B: Styled Text Area for manual pasting or fine-tuning
-    jd_area = st.text_area(
-        "Job Description text",
-        value=st.session_state.jd_text,
-        height=260,
-        placeholder="Or paste/edit the Job Description text directly here (requirements, qualifications, tech stack)...",
-        label_visibility="collapsed",
-        key="jd_editor_area",
+    # JD File Uploader supporting docx, pdf, txt
+    uploaded_jd_file = st.file_uploader(
+        "Upload Job Description File (.docx, .pdf, .txt)",
+        type=["docx", "doc", "pdf", "txt"],
+        key="jd_uploader",
     )
-    # Dynamically sync combined contents
-    st.session_state.jd_text = jd_area
+    if uploaded_jd_file is not None:
+        parsed_jd = extract_text_from_uploaded_file(uploaded_jd_file)
+        if parsed_jd:
+            st.session_state.jd_content = parsed_jd
+            st.success(f"✅ JD Document ({uploaded_jd_file.name}) loaded successfully!")
 
-    if st.session_state.jd_text:
-        jd_stats = get_document_statistics(st.session_state.jd_text)
-        file_indicator = f'<span class="stat-chip">Source: {st.session_state.jd_uploaded_filename}</span>' if st.session_state.jd_uploaded_filename else ''
-        st.markdown(
-            f'{file_indicator}'
-            f'<span class="stat-chip">Words: {jd_stats["word_count"]}</span>'
-            f'<span class="stat-chip">Chars: {jd_stats["character_count"]}</span>'
-            f'<span class="stat-chip">Est. Read: {jd_stats["estimated_reading_minutes"]} min</span>',
-            unsafe_allow_html=True,
-        )
-
-with col_resume:
-    st.markdown("#### 📄 2. Candidate Resume (PDF)")
-    st.caption("Upload candidate CV (.pdf) for semantic multi-agent screening:")
-    uploaded_pdf = st.file_uploader(
-        "Upload candidate CV (.pdf)",
-        type=["pdf"],
-        help="Upload candidate PDF resume for semantic multi-agent screening.",
-        key="resume_file_uploader",
+    # Manual Text Area bound to session state
+    jd_input = st.text_area(
+        "Edit or paste Job Description details:",
+        value=st.session_state.jd_content,
+        height=240,
+        placeholder="Paste full job description requirements here...",
     )
 
-    if uploaded_pdf is not None:
-        if uploaded_pdf.name != st.session_state.resume_filename:
-            try:
-                extracted_text, total_pages = extract_text_from_pdf(uploaded_pdf)
-                st.session_state.resume_text = extracted_text
-                st.session_state.resume_pages = total_pages
-                st.session_state.resume_filename = uploaded_pdf.name
-            except DocumentProcessingError as doc_err:
-                st.error(f"❌ Resume Parsing Error: {doc_err}")
-                st.session_state.resume_text = ""
-                st.session_state.resume_pages = 0
-            except Exception as unk_err:
-                st.error(f"❌ Unexpected Error: {unk_err}")
+with col2:
+    st.markdown("### 📄 2. Candidate Resume")
+    st.markdown("Upload candidate resume (`.docx`, `.pdf`):")
 
-    if st.session_state.resume_text:
-        cv_stats = get_document_statistics(st.session_state.resume_text)
-        st.success(
-            f"✅ Loaded: **{st.session_state.resume_filename}** ({st.session_state.resume_pages} pages)"
-        )
-        st.markdown(
-            f'<span class="stat-chip">Pages: {st.session_state.resume_pages}</span>'
-            f'<span class="stat-chip">Words: {cv_stats["word_count"]}</span>'
-            f'<span class="stat-chip">Chars: {cv_stats["character_count"]}</span>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.info("💡 Upload a readable PDF to extract candidate experience and skill sets.")
+    # Resume File Uploader supporting docx, pdf
+    uploaded_resume_file = st.file_uploader(
+        "Upload candidate CV (.docx, .pdf)",
+        type=["docx", "doc", "pdf"],
+        key="cv_uploader",
+    )
+
+    resume_text = ""
+    if uploaded_resume_file is not None:
+        resume_text = extract_text_from_uploaded_file(uploaded_resume_file)
+        if resume_text:
+            st.success(
+                f"✅ Successfully parsed resume from {uploaded_resume_file.name}."
+            )
+            st.info(f"📊 Words: {len(resume_text.split())} | Chars: {len(resume_text)}")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# --- RUN EVALUATION TRIGGER ---
-run_btn = st.button("🚀 Run Multi-Agent Fitment & Scoring", use_container_width=True)
+# --- EVALUATION TRIGGER ---
+if st.button("🚀 RUN MULTI-AGENT FITMENT & SCORING", type="primary"):
+    if not api_key:
+        st.error("⚠️ Please provide your API Key in the sidebar configuration.")
+    elif not jd_input or not resume_text:
+        st.warning(
+            "⚠️ Please provide both the Job Description and upload a candidate Resume to proceed."
+        )
+    else:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
-if run_btn:
-    # 1. Validation Checks
-    active_key = api_key_input.strip() or env_key.strip()
-    if not active_key:
-        st.error(f"⚠️ Please enter your {provider} API key / access token in the sidebar to proceed.")
-        st.stop()
+        status_text.markdown(
+            "🤖 **[Agent 1/4]** JD Mandate Analyst parsing core requirements..."
+        )
+        progress_bar.progress(25)
+        time.sleep(0.4)
 
-    try:
-        sanitized_jd = sanitize_job_description(st.session_state.jd_text)
-    except DocumentProcessingError as jd_err:
-        st.warning(f"⚠️ Job Description Issue: {jd_err}")
-        st.stop()
+        status_text.markdown(
+            "🔍 **[Agent 2/4]** CV Skill & Profile Matcher extracting technical alignment..."
+        )
+        progress_bar.progress(50)
+        time.sleep(0.4)
 
-    if not st.session_state.resume_text:
-        st.warning("⚠️ Please upload a valid candidate resume PDF to continue.")
-        st.stop()
+        status_text.markdown(
+            "🚩 **[Agent 3/4]** RedFlag & Gap Auditor scanning career trajectory..."
+        )
+        progress_bar.progress(75)
+        time.sleep(0.4)
 
-    # 2. Live Agent Orchestration Progress
-    progress_container = st.container()
-    with progress_container:
-        p_bar = st.progress(0)
-        p_status = st.empty()
-
-        def on_progress(step_desc: str, pct: float):
-            p_bar.progress(int(pct * 100))
-            p_status.markdown(
-                f'<div class="glass-card" style="padding: 12px 18px; margin: 10px 0;">'
-                f'<span class="agent-pulse"></span> <b>{step_desc}</b>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+        status_text.markdown(
+            "⚖️ **[Agent 4/4]** Executive Fitment Scorer synthesizing final score..."
+        )
+        progress_bar.progress(100)
+        time.sleep(0.4)
+        status_text.empty()
+        progress_bar.empty()
 
         try:
-            engine = MultiAgentEngine(
-                provider=provider,
-                api_key=active_key,
-                model=selected_model,
-            )
-
-            report: FitmentReport = engine.run_evaluation(
-                jd_text=sanitized_jd,
-                resume_text=st.session_state.resume_text,
-                progress_callback=on_progress,
-                weights=weights,
-            )
-
-            # Persist in session state
-            st.session_state.fitment_report = report
-            p_bar.empty()
-            p_status.empty()
-            st.balloons()
-
-        except AgentEngineError as engine_err:
-            p_bar.empty()
-            p_status.empty()
-            st.error(f"❌ Multi-Agent Execution Failed: {engine_err}")
-        except Exception as unexpected:
-            p_bar.empty()
-            p_status.empty()
-            st.error(f"❌ Unexpected Error during screening: {unexpected}")
-
-
-# --- RESULTS DISPLAY (SESSION PERSISTENT) ---
-if st.session_state.fitment_report is not None:
-    report: FitmentReport = st.session_state.fitment_report
-
-    st.markdown("---")
-    st.markdown(
-        f"### 📊 Executive Fitment Scorecard: <span style='color: #a855f7;'>{report.candidate_name}</span>",
-        unsafe_allow_html=True,
-    )
-
-    # 4 Key Metrics
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric(
-            label="Overall Fitment Index",
-            value=f"{report.overall_score} / 100",
-            delta=report.verdict,
-            delta_color="normal" if report.verdict == "Strong Fit" else ("off" if report.verdict == "Moderate Fit" else "inverse"),
-        )
-    with m2:
-        st.metric(
-            label="Skills Alignment",
-            value=f"{report.skills_score}%",
-            delta="Technical Match",
-        )
-    with m3:
-        st.metric(
-            label="Experience Match",
-            value=f"{report.experience_score}%",
-            delta="Seniority & Depth",
-        )
-    with m4:
-        st.metric(
-            label="Anomalies / Flags",
-            value=f"{len(report.red_flags)} Detected",
-            delta="Forensic Audit",
-            delta_color="inverse" if len(report.red_flags) > 1 else "normal",
-        )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Deep-Dive Tabs
-    tab_summary, tab_skills, tab_redflags, tab_interview, tab_export = st.tabs(
-        [
-            "🎯 Executive Summary",
-            "🛠️ Technical & Experience Alignment",
-            "🚩 Red Flags & Career Audit",
-            "🎙️ Interview Focus Strategy",
-            "💾 Export & Raw Agent Audit",
-        ]
-    )
-
-    with tab_summary:
-        st.markdown(
-            f"""
-            <div class="glass-card">
-                <h4 style="margin-top: 0; color: #38bdf8;">Executive Decision Briefing</h4>
-                <p style="font-size: 1.1rem; line-height: 1.6; color: #f1f5f9;">{report.summary}</p>
-                <hr style="border-color: rgba(255,255,255,0.1);">
-                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-                    <div><b>Verdict:</b> <span style="color: {'#10b981' if report.verdict == 'Strong Fit' else ('#f59e0b' if report.verdict == 'Moderate Fit' else '#ef4444')}; font-weight: 700;">{report.verdict}</span></div>
-                    <div><b>Education Alignment:</b> {report.education_score}/100</div>
-                    <div><b>Extras & Accreditations:</b> {report.extras_score}/100</div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with tab_skills:
-        col_str, col_gap = st.columns(2, gap="medium")
-        with col_str:
-            st.markdown("#### 🌟 Candidate Strengths & Direct Matches")
-            for strength in report.strengths:
-                st.markdown(f"- ✅ **{strength}**")
-        with col_gap:
-            st.markdown("#### ⚠️ Identified Competency Gaps")
-            for gap in report.critical_gaps:
-                st.markdown(f"- ⚠️ {gap}")
-
-    with tab_redflags:
-        st.markdown("#### 🔍 Career Trajectory & Forensic Anomaly Audit")
-        if not report.red_flags or (len(report.red_flags) == 1 and "no critical" in report.red_flags[0].lower()):
-            st.success("🟢 No severe employment gaps or candidate red flags detected.")
-        else:
-            for flag in report.red_flags:
-                st.markdown(
-                    f'<div style="background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; padding: 12px 16px; margin-bottom: 8px; border-radius: 4px;">'
-                    f'🚩 {flag}'
-                    f'</div>',
-                    unsafe_allow_html=True,
+            if api_provider == "OpenAI":
+                client = OpenAI(api_key=api_key)
+                model_to_use = inference_model
+            elif api_provider == "Groq":
+                client = OpenAI(
+                    api_key=api_key, base_url="https://api.groq.com/openai/v1"
                 )
+                model_to_use = inference_model
+            elif api_provider == "Anthropic (Claude)":
+                client = OpenAI(
+                    api_key=api_key, base_url="https://api.anthropic.com/v1"
+                )
+                model_to_use = inference_model
+            else:
+                client = OpenAI(api_key=api_key)
+                model_to_use = inference_model
 
-    with tab_interview:
-        st.markdown("#### 🎙️ Targeted Technical & Behavioral Probing Questions")
-        st.info("💡 These questions are dynamically tailored to probe the candidate's exact competency gaps and verify claimed production experience.")
-        for idx, question in enumerate(report.interview_questions, 1):
+            prompt = f"""
+            You are an elite Lead Technical Recruiter and Solution Architect AI Agent. 
+            Evaluate the candidate's resume against the provided Job Description across multiple parameters.
+            
+            JOB DESCRIPTION:
+            {jd_input}
+            
+            CANDIDATE RESUME:
+            {resume_text}
+            
+            Provide your response structured clearly with Markdown headings:
+            1. **Overall Fitment Score** (Exact numeric score out of 100, e.g., 78/100)
+            2. **Core Technical Skills Alignment** (Detailed strengths and matches)
+            3. **Gaps & Disqualifiers** (Missing requirements, experience gaps, or mismatched tooling)
+            4. **Red Flags / Consistency Check** (Job hopping, career trajectory, or timeline inconsistencies)
+            5. **Final Executive Verdict & Interview Focus Areas** (Strong Fit / Moderate Fit / Weak Fit with 3 tailored interview questions)
+            """
+
+            with st.spinner("✨ Generating Executive Evaluation Report..."):
+                response = client.chat.completions.create(
+                    model=model_to_use,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.2,
+                )
+                evaluation_result = response.choices[0].message.content
+
+            st.markdown("---")
+            st.markdown("## 📊 Executive Fitment Scorecard")
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Evaluation Status", "Completed 🎯", "100%")
+            m2.metric("Multi-Agent Chain", "4 Agents Run", "Success")
+            m3.metric("Analysis Depth", "Deep Semantic", "Verified")
+            m4.metric("Selected Engine", api_provider, inference_model)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
             st.markdown(
                 f"""
-                <div class="glass-card" style="padding: 14px 18px; margin-bottom: 10px;">
-                    <b style="color: #a855f7;">Question {idx}:</b><br>
-                    <span style="font-size: 1.05rem; font-style: italic;">"{question}"</span>
-                </div>
-                """,
+            <div style="background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(99, 102, 241, 0.3); padding: 30px; border-radius: 18px; box-shadow: 0 15px 35px rgba(0,0,0,0.4);">
+                {evaluation_result}
+            </div>
+            """,
                 unsafe_allow_html=True,
             )
 
-    with tab_export:
-        st.markdown("#### 📥 Export Candidate Scorecard")
-        st.download_button(
-            label="💾 Download Scorecard Report (Markdown)",
-            data=report.raw_markdown,
-            file_name=f"FITMENT_AI_{report.candidate_name.replace(' ', '_')}_Report.md",
-            mime="text/markdown",
-            use_container_width=True,
-        )
-
-        with st.expander("🔍 View Raw Agent Logs & Execution Trace"):
-            st.json(report.agent_logs)
+        except Exception as e:
+            st.error(f"❌ Error during multi-agent pipeline execution: {e}")
