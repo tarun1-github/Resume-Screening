@@ -13,6 +13,27 @@ from typing import Any, Dict, List, Optional, Tuple
 import parser
 
 
+WORD_TO_NUM: Dict[str, int] = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+    "twenty-five": 25, "thirty": 30,
+}
+
+
+def _parse_experience_number(val_str: str) -> Optional[float]:
+    if not val_str:
+        return None
+    val_clean = val_str.strip().lower()
+    if val_clean in WORD_TO_NUM:
+        return float(WORD_TO_NUM[val_clean])
+    try:
+        return float(val_clean)
+    except ValueError:
+        return None
+
+
 def compute_candidate_experience(resume_text: str) -> Tuple[int, str, str]:
     """
     Calculates total and relevant experience dynamically without hardcoding.
@@ -28,47 +49,41 @@ def compute_candidate_experience(resume_text: str) -> Tuple[int, str, str]:
     current_year = datetime.datetime.now().year
     explicit_candidates: List[float] = []
 
+    _num_words = "|".join(WORD_TO_NUM.keys())
+    _num_pat = rf'(?:[0-9]{{1,2}}(?:\.[0-9]+)?|{_num_words})'
+
     # Priority 1A: Explicit labeled experience (e.g. 'Total Experience: 20 Years', 'Overall Exp: 20+ yrs')
     label_matches = re.findall(
-        r'(?:total|overall|relevant|industry|work|it)\s*(?:work\s*)?(?:experience|exp)[\s:–-]*([0-9]{1,2}(?:\.[0-9]+)?)\+?\s*(?:years?|yrs?)',
+        rf'(?:total|overall|relevant|industry|work|it)\s*(?:work\s*)?(?:experience|exp)[\s:–-]*({_num_pat})\+?\s*(?:years?|yrs?)',
         resume_text,
         re.IGNORECASE,
     )
     for m in label_matches:
-        try:
-            val = float(m)
-            if 1 <= val <= 45:
-                explicit_candidates.append(val)
-        except ValueError:
-            pass
+        val = _parse_experience_number(m)
+        if val is not None and 1 <= val <= 45:
+            explicit_candidates.append(val)
 
     # Priority 1B: Natural prose (e.g. 'with 20 years of experience', 'having 20+ years of rich experience')
     prose_matches = re.findall(
-        r'(?:with|having|over|nearly|around|about|more\s+than)\s*([0-9]{1,2}(?:\.[0-9]+)?)\+?\s*(?:years?|yrs?)(?:\s+(?:of\s+)?(?:experience|exp|industry|professional|hands[- ]on))',
+        rf'(?:with|having|over|nearly|around|about|more\s+than)\s*({_num_pat})\+?\s*(?:years?|yrs?)(?:\s+(?:of\s+)?(?:[a-z0-9\s-]{{0,35}}?\s+)?(?:experience|exp|industry|professional|tenure|hands[- ]on))',
         resume_text,
         re.IGNORECASE,
     )
     for m in prose_matches:
-        try:
-            val = float(m)
-            if 1 <= val <= 45:
-                explicit_candidates.append(val)
-        except ValueError:
-            pass
+        val = _parse_experience_number(m)
+        if val is not None and 1 <= val <= 45:
+            explicit_candidates.append(val)
 
-    # Priority 1C: General 'X+ years of experience'
+    # Priority 1C: General 'X+ years of experience' (e.g. 'Ten years of enterprise voice experience')
     general_matches = re.findall(
-        r'\b([0-9]{1,2}(?:\.[0-9]+)?)\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp|industry)\b',
+        rf'\b({_num_pat})\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:[a-z0-9\s-]{{0,35}}?\s+)?(?:experience|exp|industry|tenure)\b',
         resume_text,
         re.IGNORECASE,
     )
     for m in general_matches:
-        try:
-            val = float(m)
-            if 1 <= val <= 45:
-                explicit_candidates.append(val)
-        except ValueError:
-            pass
+        val = _parse_experience_number(m)
+        if val is not None and 1 <= val <= 45:
+            explicit_candidates.append(val)
 
     # Priority 2: Work History timeline parsing (specifically excluding education lines)
     edu_indicators = [
@@ -131,7 +146,10 @@ def compute_candidate_experience(resume_text: str) -> Tuple[int, str, str]:
     # Priority 3: Reconcile Multi-Signal Findings
     if explicit_candidates:
         max_explicit = int(max(explicit_candidates))
-        plus = "+" if (re.search(rf'\b{max_explicit}\s*\+', resume_text) or max_explicit >= 20) else ""
+        word_aliases = [k for k, v in WORD_TO_NUM.items() if v == max_explicit]
+        word_re = f"|{word_aliases[0]}" if word_aliases else ""
+        has_plus = bool(re.search(rf'\b(?:{max_explicit}{word_re})\s*\+', resume_text, re.IGNORECASE))
+        plus = "+" if (has_plus or max_explicit >= 20) else ""
         if max_explicit >= 20:
             relevant = f"{min(max_explicit, 20)}+ Years (Senior Solutions Architect / Lead)"
         elif max_explicit >= 15:
@@ -150,10 +168,19 @@ def compute_candidate_experience(resume_text: str) -> Tuple[int, str, str]:
         return timeline_span, f"{timeline_span}+ Years", relevant
 
     # Fallback to general numbers only if detected in prose
-    general_nums = [int(x) for x in re.findall(r'\b(\d{1,2})\+?\s*(?:years?|yrs?)\b', resume_text, re.IGNORECASE) if 1 <= int(x) <= 45]
-    if general_nums:
-        val = max(general_nums)
-        return val, f"{val}+ Years", f"~{max(val - 2, 1)}+ Years (Estimated)"
+    raw_nums = re.findall(rf'\b({_num_pat})\+?\s*(?:years?|yrs?)\b', resume_text, re.IGNORECASE)
+    parsed_nums = []
+    for x in raw_nums:
+        val = _parse_experience_number(x)
+        if val is not None and 1 <= int(val) <= 45:
+            parsed_nums.append(int(val))
+    if parsed_nums:
+        val = max(parsed_nums)
+        word_aliases = [k for k, v in WORD_TO_NUM.items() if v == val]
+        word_re = f"|{word_aliases[0]}" if word_aliases else ""
+        has_plus = bool(re.search(rf'\b(?:{val}{word_re})\s*\+', resume_text, re.IGNORECASE))
+        plus = "+" if (has_plus or val >= 20) else ""
+        return val, f"{val}{plus} Years", f"~{max(val - 2, 1)}+ Years (Estimated)"
 
     return 0, "Not Detected (Requires human verification)", "Not Detected (Requires human verification)"
 
@@ -265,7 +292,7 @@ def extract_candidate_metadata(resume_text: str) -> Dict[str, str]:
                 break
 
     # 4. DOB (Date of Birth)
-    dob = "Verified on Record"
+    dob = "Not Specified"
     dob_match = re.search(
         r'(?:dob|date\s+of\s+birth|birth\s*date|born\s+on)\s*[:\-]?\s*([0-9]{1,2}[-\/\.][0-9]{1,2}[-\/\.][0-9]{2,4}|[0-9]{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s,]+[0-9]{4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+[0-9]{1,2}(?:st|nd|rd|th)?,?\s+[0-9]{4})',
         resume_text,
@@ -522,15 +549,37 @@ def evaluate_candidate_deterministically(
         "client", "clients", "company", "companies", "project", "projects", "level",
         "responsibilities", "responsibility", "solutions", "solution", "systems", "system",
         "services", "service", "handling", "delivering", "designing", "across", "support",
-        "production", "enterprise", "specifically", "environment", "environments"
+        "production", "enterprise", "specifically", "environment", "environments", "least"
     }
 
     # Extract identifiable technical keywords (min length 3, excluding generic stop words)
     jd_words = set(w for w in re.findall(r"\b[a-z]{3,}\b", jd_lower) if w not in stop_words)
     resume_words = set(w for w in re.findall(r"\b[a-z]{3,}\b", resume_lower))
 
-    matched_skills = sorted(list(jd_words.intersection(resume_words)))
-    missing_skills = sorted(list(jd_words.difference(resume_words)))
+    # Deterministic domain skill implication mapping (e.g. CUCM implies Cisco and Collaboration)
+    tech_implications: Dict[str, set[str]] = {
+        "cucm": {"cisco", "collaboration", "voice"},
+        "callmanager": {"cisco", "collaboration", "voice"},
+        "expressway": {"cisco", "collaboration"},
+        "cube": {"cisco", "voice"},
+        "jabber": {"cisco", "collaboration"},
+        "webex": {"cisco", "collaboration"},
+        "uccx": {"cisco", "collaboration"},
+        "ucce": {"cisco", "collaboration"},
+        "telepresence": {"cisco", "collaboration"},
+    }
+
+    implied_skill_sources: Dict[str, str] = {}
+    for rw in resume_words:
+        if rw in tech_implications:
+            for implied in tech_implications[rw]:
+                if implied not in resume_words and implied not in implied_skill_sources:
+                    implied_skill_sources[implied] = rw
+
+    effective_resume_words = resume_words.union(implied_skill_sources.keys())
+
+    matched_skills = sorted(list(jd_words.intersection(effective_resume_words)))
+    missing_skills = sorted(list(jd_words.difference(effective_resume_words)))
 
     # 3. Clean Linear Skill Scoring (No artificial 150% multiplier)
     skill_match_ratio = len(matched_skills) / max(len(jd_words), 1)
@@ -539,8 +588,13 @@ def evaluate_candidate_deterministically(
     # 4. Realistic Experience Scoring (No 45 floor)
     candidate_exp_years, total_exp_label, _ = compute_candidate_experience(clean_resume)
 
-    jd_exp_patterns = re.findall(r"(\d+)\+?\s*(?:years?|yrs?)", jd_lower)
-    required_exp_years = int(jd_exp_patterns[0]) if jd_exp_patterns else 5
+    jd_num_words = "|".join(WORD_TO_NUM.keys())
+    jd_exp_matches = re.findall(rf"(\d+|{jd_num_words})\+?\s*(?:years?|yrs?)", jd_lower)
+    if jd_exp_matches:
+        parsed_jd_exp = _parse_experience_number(jd_exp_matches[0])
+        required_exp_years = int(parsed_jd_exp) if parsed_jd_exp is not None else 5
+    else:
+        required_exp_years = 5
 
     if candidate_exp_years == 0:
         exp_score = 0
@@ -568,21 +622,22 @@ def evaluate_candidate_deterministically(
         )
     final_score = max(min(final_score, 100), 0)
 
-    # 8. Human Review Decision Language (Screening aid, not a hiring decision)
+    # 8. Human Review Decision Language (Screening aid, not a hiring decision; encoding safe ASCII)
     if final_score >= 75:
-        verdict = "High Keyword Match — Prioritize for Technical Screening (Heuristic Assessment)"
+        verdict = "High Keyword Match - Prioritize for Technical Screening (Heuristic Assessment)"
         recommendation = "Proceed to Technical Screening (Pending Human Review)"
     elif final_score >= 50:
-        verdict = "Moderate Keyword Match — Review Skill Gaps (Heuristic Assessment)"
+        verdict = "Moderate Keyword Match - Review Skill Gaps (Heuristic Assessment)"
         recommendation = "Requires Human Review Prior to Interview"
     else:
-        verdict = "Low Keyword Match — Significant Gaps Identified (Heuristic Assessment)"
+        verdict = "Low Keyword Match - Significant Gaps Identified (Heuristic Assessment)"
         recommendation = "Not Recommended for Primary Role based on Heuristic Scan"
 
     # 9. Extract Supporting Evidence for Matched Skills (Exact Substrings)
     evidence: Dict[str, List[str]] = {}
     for skill in matched_skills[:12]:
-        snippets = find_evidence_snippets(skill, clean_resume)
+        lookup_term = implied_skill_sources.get(skill, skill)
+        snippets = find_evidence_snippets(lookup_term, clean_resume)
         if snippets:
             evidence[skill] = snippets
 

@@ -253,6 +253,107 @@ class TestDeterministicEngine(unittest.TestCase):
                     f"Evidence snippet for '{skill}' was not found in the original resume text: {snippet}"
                 )
 
+    # -------------------------------------------------------------
+    # Stage 4 Defect Fix Regression Tests
+    # -------------------------------------------------------------
+
+    def test_word_form_and_domain_experience_detection(self):
+        """Verify spelled-out experience ('Ten years of enterprise voice experience') is detected and not invented when absent."""
+        voice_resume = (
+            "Aarav Mehta | aarav@telecom.net | Noida, UP. "
+            "Ten years of enterprise voice experience designing enterprise VoIP and routing networks. "
+            "Extensive background in SIP signaling and voice gateway troubleshooting."
+        )
+        years, total_lbl, relevant_lbl = compute_candidate_experience(voice_resume)
+        self.assertEqual(years, 10)
+        self.assertEqual(total_lbl, "10 Years")
+        self.assertIn("8+", relevant_lbl)
+
+        # Full screening evaluation with 5-year requirement
+        jd = "Voice Engineer with at least 5 years of relevant experience."
+        res = evaluate_candidate_deterministically(jd, voice_resume)
+        self.assertEqual(res["total_experience_detected"], "10 Years")
+        self.assertIn("Meets/Exceeds target (10 yrs detected vs 5 yrs required)", res["experience_assessment"])
+
+        # When experience is absent, do NOT invent experience
+        no_exp_resume = (
+            "Pooja Sharma | pooja@dev.org | Delhi. "
+            "Software engineer skilled in Python, Linux, and SQL. "
+            "Contributed to open source tooling and API microservices."
+        )
+        absent_years, absent_lbl, _ = compute_candidate_experience(no_exp_resume)
+        self.assertEqual(absent_years, 0)
+        self.assertEqual(absent_lbl, "Not Detected (Requires human verification)")
+
+    def test_cisco_and_collaboration_domain_matching_and_evidence(self):
+        """Verify CUCM and Expressway resolve cisco and collaboration false negatives with valid evidence."""
+        jd = "Cisco Collaboration Engineer, CUCM, SIP, Expressway, Linux, Python, and at least 5 years of relevant experience."
+        resume = (
+            "Rohan Verma | rohan@voice.io | Gurugram. "
+            "Ten years of enterprise voice experience. "
+            "Skills include CUCM, SIP trunking, Expressway, Linux, Python automation and troubleshooting."
+        )
+        res = evaluate_candidate_deterministically(jd, resume)
+
+        matched = res["skills_matched"]
+        missing = res["missing_skills"]
+
+        # Both cisco and collaboration must be matched, not missing
+        self.assertIn("cisco", matched)
+        self.assertIn("collaboration", matched)
+        self.assertNotIn("cisco", missing)
+        self.assertNotIn("collaboration", missing)
+
+        # Supporting evidence citations must exist and be exact substrings of candidate resume text
+        evidence = res["supporting_evidence"]
+        self.assertIn("cisco", evidence)
+        self.assertIn("collaboration", evidence)
+        for skill in ["cisco", "collaboration", "cucm", "expressway", "linux", "python", "sip"]:
+            if skill in evidence:
+                for snippet in evidence[skill]:
+                    self.assertIn(snippet, resume, f"Evidence snippet for '{skill}' must be in resume text")
+
+    def test_dob_metadata_not_specified_when_absent(self):
+        """Verify DOB returns 'Not Specified' and never 'Verified on Record' when absent."""
+        no_dob_resume = (
+            "Vikram Malhotra | vikram@cloud.io | Bengaluru. "
+            "Cloud Architect with 8 years of AWS and Terraform experience. "
+            "Available to join immediately in Bengaluru or remote."
+        )
+        meta_absent = extract_candidate_metadata(no_dob_resume)
+        self.assertEqual(meta_absent["dob"], "Not Specified")
+        self.assertNotEqual(meta_absent["dob"], "Verified on Record")
+
+        # When explicitly supplied, DOB is correctly parsed
+        dob_resume = (
+            "Vikram Malhotra | vikram@cloud.io | Bengaluru. "
+            "DOB: 15/08/1990. "
+            "Cloud Architect with 8 years of AWS and Terraform experience."
+        )
+        meta_present = extract_candidate_metadata(dob_resume)
+        self.assertEqual(meta_present["dob"], "15/08/1990")
+
+    def test_verdict_encoding_safety_no_garbled_unicode(self):
+        """Verify verdict strings are pure ASCII and do not contain em-dashes (\\u2014) or garbled sequences."""
+        high_jd = "Python Engineer with Linux."
+        high_resume = "Deepak Joshi | deepak@py.io | Pune.\nPython Engineer with 5 years experience in Python and Linux."
+        res_high = evaluate_candidate_deterministically(high_jd, high_resume)
+
+        low_jd = "Kubernetes Golang Cassandra Specialist with 10 years experience."
+        low_resume = "Deepak Joshi | deepak@py.io | Pune.\nJunior intern learning HTML."
+        res_low = evaluate_candidate_deterministically(low_jd, low_resume)
+
+        for res in [res_high, res_low]:
+            verdict = res["verdict"]
+            # Must contain ASCII hyphen separator
+            self.assertIn(" - ", verdict)
+            # Must NOT contain unicode em-dash or CP1252 garbled characters
+            self.assertNotIn("\u2014", verdict)
+            self.assertNotIn("â", verdict)
+            # All characters in verdict must be 7-bit ASCII
+            self.assertTrue(all(ord(c) <= 127 for c in verdict), f"Verdict contains non-ASCII character: {verdict}")
+
 
 if __name__ == "__main__":
     unittest.main()
+
