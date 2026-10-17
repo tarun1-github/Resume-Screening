@@ -1,15 +1,17 @@
 """
 Unit Tests for FITMENT.AI Deterministic Screening Engine
-Tests rule-based scoring, keyword matching, seniority analysis, and zero-LLM boundaries.
+Tests rule-based scoring, keyword matching, seniority analysis, zero-LLM boundaries,
+and Stage 2 reliability enhancements (no score floors, cert isolation, factual evidence).
 """
 
 import os
 import unittest
-import pytest
 
 import parser
 from deterministic_engine import (
     compute_candidate_experience,
+    detect_certifications,
+    detect_education,
     extract_candidate_metadata,
     find_evidence_snippets,
     evaluate_candidate_deterministically,
@@ -35,6 +37,10 @@ class TestDeterministicEngine(unittest.TestCase):
             "Earlier experience with CSC India from Dec'04 to Dec'05. "
             "Education: HSC, CBSE from Shiva Shiksha School in 1999. BA from Delhi University in 2009."
         )
+
+    # -------------------------------------------------------------
+    # Preserved Stage 1 Tests
+    # -------------------------------------------------------------
 
     def test_matched_and_missing_skills(self):
         """Verify matched skills appear in intersection and unmentioned skills in missing list."""
@@ -119,6 +125,133 @@ class TestDeterministicEngine(unittest.TestCase):
                 os.environ["OPENAI_API_KEY"] = orig_openai
             if orig_groq is not None:
                 os.environ["GROQ_API_KEY"] = orig_groq
+
+    # -------------------------------------------------------------
+    # Stage 2 Reliability & Regression Tests
+    # -------------------------------------------------------------
+
+    def test_completely_irrelevant_resume_scores_zero_or_near_zero(self):
+        """Verify completely irrelevant resume receives near-zero score, empty skills, and no false certs."""
+        irrelevant_resume = (
+            "Pierre Dubois | pierre@boulangerie.fr | Paris. "
+            "Executive Pastry Chef specializing in artisan sourdough, viennoiserie, and French croissants. "
+            "Managed kitchen staff of 5 bakers and oversaw daily deck oven temperature calibration, "
+            "dough proofing schedules, and flour supplier negotiations across Paris bakeries."
+        )
+        res = evaluate_candidate_deterministically(self.sample_jd, irrelevant_resume)
+
+        # Should match zero technical skills
+        self.assertEqual(res["skills_matched"], [])
+        self.assertEqual(res["certifications_detected"], [])
+        # Match score must be near-zero (no artificial 35% or 50% floor)
+        self.assertLessEqual(res["match_score"], 5)
+        self.assertTrue(res["human_review_required"])
+        self.assertIn("Low", res["verdict"])
+        # Organization must not invent 'Tier-1 Enterprise'
+        self.assertEqual(res["metadata"]["organization"], "Not Detected (Requires human verification)")
+
+    def test_skills_mentioned_without_certifications_claimed(self):
+        """Verify Python, AWS, Kubernetes, and Linux are recognized as skills, not false certifications."""
+        cloud_jd = (
+            "Cloud DevOps Platform Engineer. "
+            "Requirements: 5+ years experience hands-on with Python, Linux, AWS, Kubernetes, and Docker containers."
+        )
+        skills_resume = (
+            "Siddharth Rao | sid@cloudops.net | Bengaluru, Karnataka. "
+            "Senior Infrastructure Developer with 5 years experience designing microservices. "
+            "Hands-on expertise deploying Python backend services onto Kubernetes clusters on AWS EC2 Linux nodes. "
+            "No formal vendor certifications held at this time."
+        )
+        res = evaluate_candidate_deterministically(cloud_jd, skills_resume)
+
+        # Python and Kubernetes should be recognized as technical skills
+        self.assertIn("python", res["skills_matched"])
+        self.assertIn("kubernetes", res["skills_matched"])
+
+        # But certifications_detected must remain empty because none were claimed
+        self.assertEqual(res["certifications_detected"], [])
+
+    def test_missing_or_unverified_education(self):
+        """Verify missing education awards 0 education credit, avoiding artificial 80-point inflation."""
+        backend_jd = "Senior Python Developer with PostgreSQL, Redis, FastAPI, and Docker."
+        resume_with_edu = (
+            "Ananya Sen | ananya@dev.io | Pune, Maharashtra. "
+            "Python developer with 5 years experience in FastAPI, PostgreSQL, Redis, and Docker. "
+            "Education: Bachelor of Technology (B.Tech) in Computer Science from Pune University."
+        )
+        resume_no_edu = (
+            "Ananya Sen | ananya@dev.io | Pune, Maharashtra. "
+            "Python developer with 5 years experience in FastAPI, PostgreSQL, Redis, and Docker. "
+            "Extensive experience in distributed systems and performance optimization."
+        )
+
+        res_with = evaluate_candidate_deterministically(backend_jd, resume_with_edu)
+        res_no = evaluate_candidate_deterministically(backend_jd, resume_no_edu)
+
+        # The candidate with detected education should score higher than candidate without education
+        self.assertGreater(res_with["match_score"], res_no["match_score"])
+
+        # Test pure education weight: missing education must score 0
+        edu_only = evaluate_candidate_deterministically(
+            backend_jd, resume_no_edu, weights={"skills": 0.0, "exp": 0.0, "edu": 100.0, "extras": 0.0}
+        )
+        self.assertEqual(edu_only["match_score"], 0)
+
+    def test_genuine_matching_technical_skills_with_evidence(self):
+        """Verify genuine technical skills are matched and generic words are cleanly filtered out."""
+        res = evaluate_candidate_deterministically(self.sample_jd, self.sample_resume)
+
+        matched = res["skills_matched"]
+
+        # Genuine technical skills must match
+        for skill in ["cisco", "cucm", "expressway", "python", "sip"]:
+            self.assertIn(skill, matched)
+
+        # Generic non-technical words must NOT be treated as technical skills
+        for generic in ["senior", "engineer", "systems", "years", "requirements", "handling"]:
+            self.assertNotIn(generic, matched)
+
+        # Supporting evidence must provide non-empty citations for top matched skills
+        self.assertIn("cucm", res["supporting_evidence"])
+        self.assertGreater(len(res["supporting_evidence"]["cucm"]), 0)
+
+    def test_no_artificial_minimum_score_floors(self):
+        """Verify scores do not receive artificial minimum baseline floors (e.g. 35, 45, or 65)."""
+        senior_jd = (
+            "Principal Distributed Systems Architect. "
+            "Requirements: 15+ years experience leading enterprise Golang, Rust, Cassandra, and Kafka architectures."
+        )
+        junior_resume = (
+            "Amit Kumar | amit@startup.in | Delhi. "
+            "Junior programmer with 1 year experience writing basic scripts. No database or distributed experience."
+        )
+        res = evaluate_candidate_deterministically(senior_jd, junior_resume)
+
+        # Score must be low and NOT clamped to 35
+        self.assertLess(res["match_score"], 25)
+
+        # Zero weights handled cleanly
+        zero_res = evaluate_candidate_deterministically(
+            senior_jd, junior_resume, weights={"skills": 0.0, "exp": 0.0, "edu": 0.0, "extras": 0.0}
+        )
+        self.assertEqual(zero_res["match_score"], 0)
+
+    def test_supporting_evidence_corresponds_to_actual_resume_text(self):
+        """Verify supporting evidence snippets are exact substrings of the actual resume text."""
+        res = evaluate_candidate_deterministically(self.sample_jd, self.sample_resume)
+
+        evidence_dict = res["supporting_evidence"]
+        self.assertGreater(len(evidence_dict), 0)
+
+        for skill, snippets in evidence_dict.items():
+            self.assertIsInstance(snippets, list)
+            for snippet in snippets:
+                # Every snippet MUST be an exact substring of the candidate resume
+                self.assertIn(
+                    snippet,
+                    self.sample_resume,
+                    f"Evidence snippet for '{skill}' was not found in the original resume text: {snippet}"
+                )
 
 
 if __name__ == "__main__":

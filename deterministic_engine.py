@@ -1,7 +1,7 @@
 """
 FITMENT.AI - Deterministic Screening Engine
 Rule-based keyword extraction, seniority parsing, evidence collection, and candidate profiling.
-Zero external LLM API dependencies.
+Zero external LLM API dependencies. 100% offline heuristic evaluation.
 """
 
 from __future__ import annotations
@@ -15,14 +15,15 @@ import parser
 
 def compute_candidate_experience(resume_text: str) -> Tuple[int, str, str]:
     """
-    Wisely calculates total and relevant experience dynamically without hardcoding.
+    Calculates total and relevant experience dynamically without hardcoding.
     Filters out academic years (CBSE, degrees, schooling like 1999) to prevent false inflation.
+    Does NOT invent experience if no indicators exist.
 
     Returns:
         Tuple[int, str, str]: (numeric_years, total_exp_formatted, relevant_exp_formatted)
     """
     if not resume_text or not resume_text.strip():
-        return 3, "Not Specified", "Not Specified"
+        return 0, "Not Detected (Requires human verification)", "Not Detected (Requires human verification)"
 
     current_year = datetime.datetime.now().year
     explicit_candidates: List[float] = []
@@ -148,19 +149,20 @@ def compute_candidate_experience(resume_text: str) -> Tuple[int, str, str]:
             relevant = f"~{max(timeline_span - 2, 1)}+ Years (Domain Aligned)"
         return timeline_span, f"{timeline_span}+ Years", relevant
 
-    # Fallback to general numbers if detected
+    # Fallback to general numbers only if detected in prose
     general_nums = [int(x) for x in re.findall(r'\b(\d{1,2})\+?\s*(?:years?|yrs?)\b', resume_text, re.IGNORECASE) if 1 <= int(x) <= 45]
     if general_nums:
         val = max(general_nums)
         return val, f"{val}+ Years", f"~{max(val - 2, 1)}+ Years (Estimated)"
 
-    return 3, "3+ Years (Estimated)", "~2+ Years"
+    return 0, "Not Detected (Requires human verification)", "Not Detected (Requires human verification)"
 
 
 def extract_candidate_metadata(resume_text: str) -> Dict[str, str]:
     """
     Extracts candidate profile metadata (Name, Email, Location, DOB, Experience, Employer)
     using robust heuristics and regex segmentation.
+    Does not invent employer/client information if not found.
     """
     if not resume_text or not resume_text.strip():
         return {
@@ -170,7 +172,7 @@ def extract_candidate_metadata(resume_text: str) -> Dict[str, str]:
             "dob": "Not Specified",
             "total_exp": "Not Specified",
             "relevant_exp": "Not Specified",
-            "organization": "Not Specified",
+            "organization": "Not Detected (Requires human verification)",
         }
 
     lines = [line.strip() for line in resume_text.splitlines() if line.strip()]
@@ -243,7 +245,6 @@ def extract_candidate_metadata(resume_text: str) -> Dict[str, str]:
         if 2 <= len(loc_val) <= 45 and not loc_val.lower().startswith("http"):
             location = loc_val
 
-    # Check top header segments for candidate residence / location
     if location == "Not Specified":
         for line in lines[:6]:
             segments = re.split(r'[\s]*[\|\–\-•;][\s]*', line)
@@ -325,7 +326,7 @@ def extract_candidate_metadata(resume_text: str) -> Dict[str, str]:
     elif client:
         organization = f"Enterprise Client: {client}"
     else:
-        organization = "Tier-1 Enterprise / IT Services"
+        organization = "Not Detected (Requires human verification)"
 
     return {
         "name": name,
@@ -340,18 +341,124 @@ def extract_candidate_metadata(resume_text: str) -> Dict[str, str]:
 
 def find_evidence_snippets(term: str, text: str, max_snippets: int = 2) -> List[str]:
     """
-    Extracts sentence-level evidence surrounding a matched keyword.
-    Provides verifiable, factual proof for Copilot Studio explanation.
+    Extracts sentence-level evidence surrounding a matched keyword directly from text.
+    Provides verifiable, factual proof for screening assessment.
+    Returns exact substrings without modification.
     """
+    if not term or not text:
+        return []
     snippets: List[str] = []
-    pattern = re.compile(rf'([^.\n]*?\b{re.escape(term)}\b[^.\n]*)', re.IGNORECASE)
+    pattern = re.compile(rf'([^.\n\r]*?\b{re.escape(term)}\b[^.\n\r]*)', re.IGNORECASE)
     for match in pattern.finditer(text):
         snippet = match.group(1).strip()
-        if 15 <= len(snippet) <= 220:
-            snippets.append(snippet)
+        # Verify snippet is a true slice of the text and has meaningful length
+        if snippet and snippet in text and 10 <= len(snippet) <= 250:
+            if snippet not in snippets:
+                snippets.append(snippet)
         if len(snippets) >= max_snippets:
             break
     return snippets
+
+
+def detect_certifications(resume_text: str) -> Tuple[int, List[str]]:
+    """
+    Detects explicitly claimed certifications and credentials.
+    Does NOT classify standalone programming languages or cloud tools (Python, Linux, AWS, Kubernetes)
+    as certifications unless accompanied by explicit credential context.
+    
+    Returns:
+        Tuple[int, List[str]]: (certification_score, list_of_detected_certifications)
+    """
+    if not resume_text or not resume_text.strip():
+        return 0, []
+
+    found_certs: List[str] = []
+
+    # 1. Recognized Industry Credential Acronyms & Standards
+    explicit_acronyms = [
+        "CCNA", "CCNP", "CCIE", "CCDA", "CCDP",
+        "PMP", "PRINCE2", "CISSP", "CISA", "CISM", "CEH", "ITIL",
+        "CKA", "CKAD"
+    ]
+    for acr in explicit_acronyms:
+        if re.search(rf'\b{re.escape(acr)}\b', resume_text, re.IGNORECASE):
+            if acr == "ITIL":
+                itil_m = re.search(r'\bITIL(?:\s+(?:Foundation|v[34]|v2011))?\b', resume_text, re.IGNORECASE)
+                found_certs.append(itil_m.group(0).strip() if itil_m else "ITIL")
+            else:
+                found_certs.append(acr)
+
+    # 2. Explicit "Vendor Certified ..." Credentials
+    vendor_pattern = re.compile(
+        r'\b((?:Microsoft|AWS|Amazon|Google Cloud|GCP|Red Hat|Cisco|Oracle|Scrum|HashiCorp)\s+Certified\s+[A-Za-z0-9\s&/\(\)-]{3,50}?)(?=[,;\.\n\r|]|\bwith\b|\bfor\b|\bfrom\b|$)',
+        re.IGNORECASE,
+    )
+    for m in vendor_pattern.finditer(resume_text):
+        cert_name = m.group(1).strip()
+        if cert_name and len(cert_name) <= 60 and cert_name.upper() not in [c.upper() for c in found_certs]:
+            found_certs.append(cert_name)
+
+    # 3. Explicit "Certification: ..." or "Certified ..." labeled statements
+    general_cert_pattern = re.compile(
+        r'\b(?:certification|license)\s*[:\-–]\s*([A-Za-z0-9\s&/\(\)-]{3,50}?)(?=[,;\.\n\r|]|$)',
+        re.IGNORECASE,
+    )
+    for m in general_cert_pattern.finditer(resume_text):
+        c_title = m.group(1).strip()
+        if c_title and len(c_title) <= 60 and c_title.upper() not in [c.upper() for c in found_certs]:
+            found_certs.append(c_title)
+
+    # Deduplicate while preserving order
+    deduped: List[str] = []
+    seen = set()
+    for c in found_certs:
+        cu = c.upper()
+        if cu not in seen:
+            seen.add(cu)
+            deduped.append(c)
+
+    if not deduped:
+        return 0, []
+
+    # Score linearly based on verified credentials (up to 100)
+    cert_score = min(len(deduped) * 50, 100)
+    return cert_score, deduped
+
+
+def detect_education(resume_text: str) -> Tuple[int, str, List[str]]:
+    """
+    Detects explicitly claimed degrees or educational credentials.
+    Awards 0 credit if no degree or educational institution is detected.
+    Does not assume a degree or award unverified credit.
+
+    Returns:
+        Tuple[int, str, List[str]]: (education_score, education_assessment, education_evidence)
+    """
+    if not resume_text or not resume_text.strip():
+        return 0, "Not Detected (Requires human verification)", []
+
+    edu_evidence: List[str] = []
+    degree_patterns = [
+        r'\b(?:b\.?\s*tech|b\.?\s*e\.?|m\.?\s*tech|m\.?\s*e\.?|bca|mca|b\.?\s*sc|m\.?\s*sc|b\.?\s*a\.?|m\.?\s*a\.?|bba|mba|ph\.?\s*d|bachelor(?:[\'’]s)?(?:\s+of\s+[A-Za-z\s]+)?|master(?:[\'’]s)?(?:\s+of\s+[A-Za-z\s]+)?|doctorate|diploma)\b',
+        r'\b(?:university|college|institute\s+of\s+technology|polytechnic)\b'
+    ]
+
+    has_degree = False
+    for line in resume_text.splitlines():
+        line_clean = line.strip()
+        if not line_clean:
+            continue
+        for pat in degree_patterns:
+            if re.search(pat, line_clean, re.IGNORECASE):
+                has_degree = True
+                if line_clean not in edu_evidence and len(edu_evidence) < 2:
+                    edu_evidence.append(line_clean)
+                break
+
+    if not has_degree:
+        return 0, "Not Detected (Requires human verification)", []
+
+    return 100, "Education Detected", edu_evidence
 
 
 def evaluate_candidate_deterministically(
@@ -361,6 +468,8 @@ def evaluate_candidate_deterministically(
 ) -> Dict[str, Any]:
     """
     Executes 100% offline, rule-based screening and returns structured results.
+    Eliminates artificial score floors, filters generic non-technical words,
+    and isolates skills from certifications.
 
     Args:
         jd_text: Target Job Description text.
@@ -381,71 +490,96 @@ def evaluate_candidate_deterministically(
             f"Resume content too brief ({len(clean_resume)} chars). Minimum 30 chars required."
         )
 
+    # 1. Normalized Configurable Weights Handling
     if weights is None:
         weights = {"skills": 40.0, "exp": 30.0, "edu": 15.0, "extras": 15.0}
+
+    w_skills = max(float(weights.get("skills", 0.0)), 0.0)
+    w_exp = max(float(weights.get("exp", 0.0)), 0.0)
+    w_edu = max(float(weights.get("edu", 0.0)), 0.0)
+    w_extras = max(float(weights.get("extras", 0.0)), 0.0)
+
+    total_weight = w_skills + w_exp + w_edu + w_extras
 
     jd_lower = clean_jd.lower()
     resume_lower = clean_resume.lower()
 
+    # 2. Comprehensive Stop-Words Filtering (generic English, seniority titles, and business prose)
     stop_words = {
+        # Standard English grammar stop words
         "and", "the", "for", "with", "you", "that", "this", "from", "are", "our",
-        "will", "have", "with", "your", "must", "they", "been", "work", "team",
-        "skills", "experience", "required", "preferred", "role", "knowledge", "strong"
+        "will", "have", "your", "must", "they", "been", "all", "any", "both", "each",
+        "few", "more", "most", "other", "some", "such", "than", "too", "very", "can",
+        # Generic role & seniority nouns
+        "senior", "junior", "lead", "engineer", "engineering", "developer", "architect",
+        "specialist", "analyst", "manager", "management", "consultant", "director",
+        # Generic tenure, business & job specification boilerplate
+        "years", "year", "experience", "exp", "work", "working", "team", "teams",
+        "skills", "skill", "required", "requirements", "requirement", "preferred",
+        "minimum", "maximum", "role", "roles", "knowledge", "strong", "understanding",
+        "ability", "communication", "written", "verbal", "including", "relevant",
+        "related", "candidate", "candidates", "profile", "summary", "status", "duration",
+        "client", "clients", "company", "companies", "project", "projects", "level",
+        "responsibilities", "responsibility", "solutions", "solution", "systems", "system",
+        "services", "service", "handling", "delivering", "designing", "across", "support",
+        "production", "enterprise", "specifically", "environment", "environments"
     }
 
+    # Extract identifiable technical keywords (min length 3, excluding generic stop words)
     jd_words = set(w for w in re.findall(r"\b[a-z]{3,}\b", jd_lower) if w not in stop_words)
     resume_words = set(w for w in re.findall(r"\b[a-z]{3,}\b", resume_lower))
 
     matched_skills = sorted(list(jd_words.intersection(resume_words)))
     missing_skills = sorted(list(jd_words.difference(resume_words)))
 
+    # 3. Clean Linear Skill Scoring (No artificial 150% multiplier)
     skill_match_ratio = len(matched_skills) / max(len(jd_words), 1)
-    skills_score = min(int(skill_match_ratio * 150), 100)
+    skills_score = int(skill_match_ratio * 100)
 
+    # 4. Realistic Experience Scoring (No 45 floor)
     candidate_exp_years, total_exp_label, _ = compute_candidate_experience(clean_resume)
 
     jd_exp_patterns = re.findall(r"(\d+)\+?\s*(?:years?|yrs?)", jd_lower)
     required_exp_years = int(jd_exp_patterns[0]) if jd_exp_patterns else 5
 
-    if candidate_exp_years >= required_exp_years:
-        exp_score = 95
+    if candidate_exp_years == 0:
+        exp_score = 0
+        exp_verdict = f"Experience tenure not explicitly detected in resume ({required_exp_years} yrs required; Requires human verification)"
+    elif candidate_exp_years >= required_exp_years:
+        exp_score = 100
         exp_verdict = f"Meets/Exceeds target ({candidate_exp_years} yrs detected vs {required_exp_years} yrs required)"
     else:
-        exp_score = max(int((candidate_exp_years / required_exp_years) * 100), 45)
+        exp_score = int((candidate_exp_years / required_exp_years) * 100)
         exp_verdict = f"Below target ({candidate_exp_years} yrs detected vs {required_exp_years} yrs required)"
 
-    common_certs = [
-        "itil", "ccna", "ccie", "python", "scrum", "pmp", "aws", "azure", "kubernetes", "linux", "copilot", "power platform"
-    ]
-    found_certs = [c.upper() for c in common_certs if c in resume_lower]
-    cert_score = min(len(found_certs) * 30, 100) if found_certs else 65
+    # 5. Certification Detection & Scoring (No 65 floor; no plain skills as certs)
+    cert_score, found_certs = detect_certifications(clean_resume)
 
-    w_skills = weights.get("skills", 40.0) / 100.0
-    w_exp = weights.get("exp", 30.0) / 100.0
-    w_edu = weights.get("edu", 15.0) / 100.0
-    w_extras = weights.get("extras", 15.0) / 100.0
+    # 6. Education Detection & Scoring (No default 80 credit)
+    edu_score, edu_assessment, edu_evidence = detect_education(clean_resume)
 
-    total_weight = w_skills + w_exp + w_edu + w_extras
-    if total_weight <= 0:
-        total_weight = 1.0
-
-    final_score = int(
-        (skills_score * w_skills + exp_score * w_exp + cert_score * w_extras + 80 * w_edu)
-        / total_weight
-    )
-    final_score = max(min(final_score, 98), 35)
-
-    if final_score >= 75:
-        verdict = "Strong Fit — Recommended for Technical Screening"
-        recommendation = "Proceed to Technical Interview"
-    elif final_score >= 55:
-        verdict = "Moderate Fit — Review Gaps with Hiring Manager"
-        recommendation = "Requires Further Review"
+    # 7. Final Score Computation (No artificial floors; bounds [0, 100])
+    if total_weight <= 0.0:
+        final_score = 0
     else:
-        verdict = "Low Keyword Fit — Significant Gaps Identified"
-        recommendation = "Not Recommended for Primary Role"
+        final_score = int(
+            (skills_score * w_skills + exp_score * w_exp + cert_score * w_extras + edu_score * w_edu)
+            / total_weight
+        )
+    final_score = max(min(final_score, 100), 0)
 
-    # Compile Evidence Map for Top Matched Skills
+    # 8. Human Review Decision Language (Screening aid, not a hiring decision)
+    if final_score >= 75:
+        verdict = "High Keyword Match — Prioritize for Technical Screening (Heuristic Assessment)"
+        recommendation = "Proceed to Technical Screening (Pending Human Review)"
+    elif final_score >= 50:
+        verdict = "Moderate Keyword Match — Review Skill Gaps (Heuristic Assessment)"
+        recommendation = "Requires Human Review Prior to Interview"
+    else:
+        verdict = "Low Keyword Match — Significant Gaps Identified (Heuristic Assessment)"
+        recommendation = "Not Recommended for Primary Role based on Heuristic Scan"
+
+    # 9. Extract Supporting Evidence for Matched Skills (Exact Substrings)
     evidence: Dict[str, List[str]] = {}
     for skill in matched_skills[:12]:
         snippets = find_evidence_snippets(skill, clean_resume)
@@ -454,7 +588,7 @@ def evaluate_candidate_deterministically(
 
     metadata = extract_candidate_metadata(clean_resume)
 
-    # Tailored interview questions addressing missing keywords
+    # 10. Targeted Interview Probes
     sample_missing = missing_skills[:3]
     interview_questions = [
         f"Can you detail your production experience working with {sample_missing[0]}?" if len(sample_missing) > 0 else "What architecture and deployment best practices do you follow in enterprise projects?",
