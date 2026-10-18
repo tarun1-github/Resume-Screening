@@ -194,12 +194,17 @@ def extract_candidate_metadata(resume_text: str) -> Dict[str, str]:
     if not resume_text or not resume_text.strip():
         return {
             "name": "Candidate Profile",
+            "mobile": "Not available in CV",
             "email": "Not Specified",
             "location": "Not Specified",
             "dob": "Not Specified",
             "total_exp": "Not Specified",
             "relevant_exp": "Not Specified",
             "organization": "Not Detected (Requires human verification)",
+            "current_designation": "Not Detected (Requires human verification)",
+            "previous_organizations": [],
+            "education": "Not Detected (Requires human verification)",
+            "certifications": [],
         }
 
     lines = [line.strip() for line in resume_text.splitlines() if line.strip()]
@@ -355,14 +360,76 @@ def extract_candidate_metadata(resume_text: str) -> Dict[str, str]:
     else:
         organization = "Not Detected (Requires human verification)"
 
+    # 7. Mobile / Contact Number Extraction (Safe regex, never invent, fallback to 'Not available in CV')
+    mobile = "Not available in CV"
+    mob_match = re.search(
+        r'(?:contact|mobile|phone|cell|tel(?:ephone)?)[\s:–-]*([+]?[0-9\s().-]{10,22})',
+        resume_text,
+        re.IGNORECASE,
+    )
+    if mob_match:
+        cand_mob = mob_match.group(1).strip()
+        digits = re.sub(r'\D', '', cand_mob)
+        if 10 <= len(digits) <= 15:
+            mobile = cand_mob.strip(' |-,;')
+    if mobile == "Not available in CV":
+        stand = re.search(r'(?:\+91[\s-]?[6-9]\d{9}|\b[6-9]\d{9}\b)', resume_text)
+        if stand:
+            mobile = stand.group(0).strip()
+
+    # 8. Current Designation / Role Extraction (Separated from organization and target job)
+    current_designation = "Not Detected (Requires human verification)"
+    desig_match = re.search(
+        r'(?:current\s+designation|current\s+role|designation|role|title|position)\s*[:\-]\s*([A-Za-z0-9\s/&–-]{3,50}?)(?:\r?\n|;|\borganization\b|\bcompany\b|\||$)',
+        resume_text,
+        re.IGNORECASE,
+    )
+    if desig_match:
+        val = desig_match.group(1).strip()
+        if len(val) >= 3 and not any(w in val.lower() for w in ['name', 'summary', 'experience', 'education', 'hcl', 'cisco', 'tech']):
+            current_designation = val
+    if current_designation == "Not Detected (Requires human verification)":
+        role_kws = ['engineer', 'analyst', 'architect', 'developer', 'consultant', 'specialist', 'manager', 'lead', 'administrator', 'technician']
+        for line in lines[1:6]:
+            if re.search(r'(@|\.com|contact|phone|mobile|location|address|http|\+91)', line, re.IGNORECASE):
+                continue
+            if any(k in line.lower() for k in role_kws) and len(line) <= 60:
+                current_designation = line.strip(' -–|:')
+                break
+
+    # 9. Previous Organizations and Project Client History
+    previous_organizations: List[str] = []
+    for org in [
+        "HCL Tech", "HCL Technologies", "AT&T", "Cisco Systems", "Cisco",
+        "Tata Consultancy Services", "TCS", "Infosys", "Wipro", "Cognizant",
+        "Accenture", "Tech Mahindra", "IBM", "Capgemini", "Deloitte", "Bank of America"
+    ]:
+        if re.search(r'\b' + re.escape(org) + r'\b', resume_text, re.IGNORECASE):
+            if org not in previous_organizations:
+                previous_organizations.append(org)
+
+    # 10. Education and Certifications Summary
+    edu_score, edu_status, edu_ev = detect_education(resume_text)
+    if edu_ev:
+        raw_edu = re.sub(r'[^\x20-\x7E\s]', ' ', edu_ev[0])
+        education = re.sub(r'\s+', ' ', raw_edu).strip()
+    else:
+        education = "Education Detected" if edu_score > 0 else "Not Detected (Requires human verification)"
+    _, detected_certs = detect_certifications(resume_text)
+
     return {
         "name": name,
+        "mobile": mobile,
         "email": email,
         "location": location,
         "dob": dob,
         "total_exp": total_exp,
         "relevant_exp": relevant_exp,
         "organization": organization,
+        "current_designation": current_designation,
+        "previous_organizations": previous_organizations,
+        "education": education,
+        "certifications": detected_certs,
     }
 
 

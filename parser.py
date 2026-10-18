@@ -237,6 +237,9 @@ def clean_text(text: str) -> str:
     if not text:
         return ""
 
+    import unicodedata
+    text = unicodedata.normalize("NFKD", text)
+
     # Remove null bytes and non-printable control characters (except newline, tab)
     text = text.replace("\x00", " ")
     text = re.sub(r"[\r\f\v]", "\n", text)

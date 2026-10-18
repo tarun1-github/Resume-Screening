@@ -59,7 +59,7 @@ class ScreeningResponse(BaseModel):
     certifications_detected: List[str]
     interview_questions: List[str]
     human_review_required: bool
-    metadata: Dict[str, str]
+    metadata: Dict[str, Any]
     status: str
 
 

@@ -21,7 +21,7 @@ build/
 dist/
 *.egg-info/
 
-# Streamlit Local Cache
+# Streamlit Local Cache & Secrets
 .streamlit/secrets.toml
 
 # IDE & Editor Settings
@@ -35,7 +35,32 @@ dist/
 Thumbs.db
 desktop.ini
 
-# Local testing uploads
-data/*.docx
-data/*CV.pdf
+# Local SQLite Databases
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.sqlite
+data/*.sqlite3
 
+# Persistent Storage & Candidate Privacy
+data/*.pdf
+data/*.docx
+data/*.doc
+data/*.txt
+data/*.csv
+!data/Resume_CV.pdf
+!data/job_description.txt
+data/job_descriptions/*
+!data/job_descriptions/.gitkeep
+data/resumes/*
+!data/resumes/.gitkeep
+data/logs/*
+!data/logs/.gitkeep
+
+# Local Backup & Scratch Files
+app_backup_*.py
+app_cp.py
+app_finetuned.py
+app_local_1.py
+scratch/
