@@ -12,7 +12,7 @@ import re
 import tempfile
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import registry
 
@@ -96,27 +96,80 @@ def validate_file_upload(filename: str, file_bytes: bytes) -> Tuple[bool, str]:
     return True, ""
 
 
-def resolve_stored_path(relative_path: str, base_dir: Optional[str] = None) -> str:
+def resolve_stored_path(path_or_dict: Union[str, Dict[str, Any]], base_dir: Optional[str] = None) -> str:
     """
-    Safely resolves a stored relative path against base data directory,
+    Safely resolves a stored relative path or file dictionary against base data directory,
     enforcing that the resolved path cannot escape base_dir (path traversal prevention).
+    Supports legacy absolute paths if within allowed project boundaries.
     """
-    base = get_base_data_dir(base_dir)
-    # Normalize slashes
-    clean_rel = relative_path.replace("\\", "/").lstrip("/")
-    # If path starts with 'data/', strip it to prevent data/data nesting
-    if clean_rel.startswith("data/"):
-        clean_rel = clean_rel[5:]
+    if isinstance(path_or_dict, dict):
+        raw_path = (
+            path_or_dict.get("stored_path")
+            or path_or_dict.get("stored_relative_path")
+            or path_or_dict.get("stored_absolute_path")
+            or ""
+        )
+    else:
+        raw_path = str(path_or_dict or "")
 
-    target_path = os.path.abspath(os.path.join(base, clean_rel))
-    if not target_path.startswith(base):
-        raise PermissionError(f"Security Alert: Path traversal attempt detected for '{relative_path}'")
+    clean_p = raw_path.strip().replace("\\", "/")
+    if not clean_p:
+        raise ValueError("Cannot resolve empty file path")
+
+    base = os.path.abspath(get_base_data_dir(base_dir))
+
+    # Reject obvious traversal sequences
+    parts = [part for part in clean_p.split("/") if part]
+    if ".." in parts:
+        raise PermissionError(f"Security Alert: Path traversal attempt detected for '{raw_path}'")
+
+    # If already an absolute path
+    if os.path.isabs(clean_p) or (len(clean_p) > 2 and clean_p[1] == ":"):
+        target_path = os.path.abspath(clean_p)
+        try:
+            common = os.path.commonpath([base, target_path])
+            if common == base:
+                return target_path
+        except ValueError:
+            pass
+        # Check if within project root
+        project_root = os.path.abspath(os.path.dirname(base))
+        try:
+            common_proj = os.path.commonpath([project_root, target_path])
+            if common_proj == project_root:
+                return target_path
+        except ValueError:
+            pass
+        raise PermissionError(f"Security Alert: Absolute path outside allowed directory: '{raw_path}'")
+
+    # Strip leading 'data/' if relative
+    if clean_p.startswith("data/"):
+        clean_p = clean_p[5:]
+
+    target_path = os.path.abspath(os.path.join(base, clean_p))
+    try:
+        common = os.path.commonpath([base, target_path])
+        if common != base:
+            raise PermissionError(f"Security Alert: Path traversal attempt detected for '{raw_path}'")
+    except ValueError:
+        raise PermissionError(f"Security Alert: Path traversal attempt detected for '{raw_path}'")
 
     return target_path
 
 
-def read_stored_file_bytes(relative_path: str, base_dir: Optional[str] = None) -> bytes:
-    """Reads bytes of a stored file with path-traversal safety check."""
+def read_stored_file_bytes(file_ref: Union[str, Dict[str, Any]], base_dir: Optional[str] = None) -> bytes:
+    """Reads bytes of a stored file or dictionary record with path-traversal safety check."""
+    if isinstance(file_ref, dict):
+        relative_path = (
+            file_ref.get("stored_path")
+            or file_ref.get("stored_relative_path")
+            or file_ref.get("stored_absolute_path")
+        )
+        if not relative_path:
+            raise KeyError("File record dictionary missing 'stored_path' or 'stored_relative_path'")
+    else:
+        relative_path = file_ref
+
     full_path = resolve_stored_path(relative_path, base_dir)
     if not os.path.exists(full_path):
         raise FileNotFoundError(f"Stored file does not exist at '{relative_path}'")
@@ -134,6 +187,7 @@ def save_job_description_file(
     """
     Atomically saves an uploaded Job Description in data/job_descriptions/.
     Handles deduplication, validates size, and records metadata in database.
+    Returns unified file metadata contract.
     """
     is_valid, err_msg = validate_file_upload(original_filename, file_bytes)
     if not is_valid:
@@ -150,19 +204,26 @@ def save_job_description_file(
             "SELECT * FROM stored_files WHERE file_type = 'job_description' AND sha256_hash = ?",
             (checksum,),
         )
-        existing = cursor.fetchone()
-        if existing:
-            rel_path = existing["stored_relative_path"]
+        existing_row = cursor.fetchone()
+        if existing_row:
+            existing = dict(existing_row)
+            rel_path = existing.get("stored_relative_path") or existing.get("stored_path")
             abs_path = resolve_stored_path(rel_path, base)
             if os.path.exists(abs_path) and os.path.getsize(abs_path) == len(file_bytes):
                 return {
                     "status": "success",
                     "file_id": existing["file_id"],
+                    "original_filename": original_filename,
+                    "file_role": "jd",
+                    "file_type": "job_description",
+                    "stored_path": rel_path,
                     "stored_relative_path": rel_path,
                     "stored_absolute_path": abs_path,
-                    "original_filename": original_filename,
                     "file_size": len(file_bytes),
                     "sha256": checksum,
+                    "sha256_hash": checksum,
+                    "uploaded_at": existing.get("upload_timestamp", datetime.now().isoformat()),
+                    "upload_timestamp": existing.get("upload_timestamp", datetime.now().isoformat()),
                     "reused": True,
                     "message": f"✅ JD — {original_filename} verified and reused from data/job_descriptions/",
                 }
@@ -209,16 +270,27 @@ def save_job_description_file(
             """,
             (file_id, original_filename, rel_stored_path, len(file_bytes), checksum, now_iso, job_id),
         )
+        # Update stored_path column if table supports it
+        try:
+            cursor.execute("UPDATE stored_files SET stored_path = ? WHERE file_id = ?", (rel_stored_path, file_id))
+        except Exception:
+            pass
         conn.commit()
 
     return {
         "status": "success",
         "file_id": file_id,
+        "original_filename": original_filename,
+        "file_role": "jd",
+        "file_type": "job_description",
+        "stored_path": rel_stored_path,
         "stored_relative_path": rel_stored_path,
         "stored_absolute_path": target_abs_path,
-        "original_filename": original_filename,
         "file_size": len(file_bytes),
         "sha256": checksum,
+        "sha256_hash": checksum,
+        "uploaded_at": now_iso,
+        "upload_timestamp": now_iso,
         "reused": False,
         "message": f"✅ JD — {original_filename} saved successfully in data/job_descriptions/",
     }
@@ -234,7 +306,8 @@ def save_resume_file(
 ) -> Dict[str, Any]:
     """
     Atomically saves an uploaded CV/Resume in data/resumes/.
-    Handles deduplication, validates size, and records metadata in database.
+    Handles deduplication, validates size, preserves original file extension,
+    and records metadata in database with unified metadata contract.
     """
     is_valid, err_msg = validate_file_upload(original_filename, file_bytes)
     if not is_valid:
@@ -243,8 +316,13 @@ def save_resume_file(
     base, _, resumes_dir, _ = get_storage_dirs(base_dir)
     checksum = compute_sha256(file_bytes)
 
-    # Use candidate name in stem if provided, otherwise filename stem
-    clean_stem, ext = sanitize_filename(candidate_name if candidate_name else original_filename)
+    # Always preserve the original file extension from original_filename
+    _, ext = sanitize_filename(original_filename)
+    if candidate_name and candidate_name.strip():
+        clean_cand_stem, _ = sanitize_filename(candidate_name)
+        stem_to_use = clean_cand_stem
+    else:
+        stem_to_use, _ = sanitize_filename(original_filename)
 
     # Check for identical existing file in database
     with registry.get_connection(db_path) as conn:
@@ -253,9 +331,10 @@ def save_resume_file(
             "SELECT * FROM stored_files WHERE file_type = 'resume' AND sha256_hash = ?",
             (checksum,),
         )
-        existing = cursor.fetchone()
-        if existing:
-            rel_path = existing["stored_relative_path"]
+        existing_row = cursor.fetchone()
+        if existing_row:
+            existing = dict(existing_row)
+            rel_path = existing.get("stored_relative_path") or existing.get("stored_path")
             abs_path = resolve_stored_path(rel_path, base)
             if os.path.exists(abs_path) and os.path.getsize(abs_path) == len(file_bytes):
                 # Update candidate association if candidate_id provided
@@ -268,18 +347,25 @@ def save_resume_file(
                 return {
                     "status": "success",
                     "file_id": existing["file_id"],
+                    "original_filename": original_filename,
+                    "file_role": "resume",
+                    "file_type": "resume",
+                    "stored_path": rel_path,
                     "stored_relative_path": rel_path,
                     "stored_absolute_path": abs_path,
-                    "original_filename": original_filename,
                     "file_size": len(file_bytes),
                     "sha256": checksum,
+                    "sha256_hash": checksum,
+                    "uploaded_at": existing.get("upload_timestamp", datetime.now().isoformat()),
+                    "upload_timestamp": existing.get("upload_timestamp", datetime.now().isoformat()),
+                    "candidate_id": candidate_id or existing.get("candidate_id"),
                     "reused": True,
                     "message": f"✅ Resume — {original_filename} verified and reused from data/resumes/",
                 }
 
-    # Generate collision-safe filename
+    # Generate collision-safe filename preserving extension
     file_uuid = uuid.uuid4().hex[:8]
-    stored_name = f"{clean_stem}_{file_uuid}{ext}"
+    stored_name = f"{stem_to_use}_{file_uuid}{ext}"
     target_abs_path = os.path.join(resumes_dir, stored_name)
     rel_stored_path = f"data/resumes/{stored_name}"
 
@@ -317,23 +403,34 @@ def save_resume_file(
             """,
             (file_id, original_filename, rel_stored_path, len(file_bytes), checksum, now_iso, candidate_id),
         )
+        try:
+            cursor.execute("UPDATE stored_files SET stored_path = ? WHERE file_id = ?", (rel_stored_path, file_id))
+        except Exception:
+            pass
         conn.commit()
 
     return {
         "status": "success",
         "file_id": file_id,
+        "original_filename": original_filename,
+        "file_role": "resume",
+        "file_type": "resume",
+        "stored_path": rel_stored_path,
         "stored_relative_path": rel_stored_path,
         "stored_absolute_path": target_abs_path,
-        "original_filename": original_filename,
         "file_size": len(file_bytes),
         "sha256": checksum,
+        "sha256_hash": checksum,
+        "uploaded_at": now_iso,
+        "upload_timestamp": now_iso,
+        "candidate_id": candidate_id,
         "reused": False,
         "message": f"✅ Resume — {original_filename} saved successfully in data/resumes/",
     }
 
 
 def list_saved_job_descriptions(base_dir: Optional[str] = None, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
-    """List all persisted Job Description files available for reuse."""
+    """List all persisted Job Description files available for reuse with normalized contract."""
     registry.init_db(db_path)
     base, _, _, _ = get_storage_dirs(base_dir)
     with registry.get_connection(db_path) as conn:
@@ -347,13 +444,19 @@ def list_saved_job_descriptions(base_dir: Optional[str] = None, db_path: Optiona
         )
         rows = [dict(r) for r in cursor.fetchall()]
 
-    # Verify each file exists on disk
+    # Verify each file exists on disk and normalize contract
     valid = []
     for r in rows:
         try:
-            full_p = resolve_stored_path(r["stored_relative_path"], base)
+            stored_p = r.get("stored_relative_path") or r.get("stored_path")
+            full_p = resolve_stored_path(stored_p, base)
             if os.path.exists(full_p):
+                r["stored_path"] = stored_p
+                r["stored_relative_path"] = stored_p
                 r["stored_absolute_path"] = full_p
+                r["file_role"] = "jd"
+                r["sha256"] = r.get("sha256_hash")
+                r["uploaded_at"] = r.get("upload_timestamp")
                 valid.append(r)
         except Exception:
             continue
@@ -361,7 +464,7 @@ def list_saved_job_descriptions(base_dir: Optional[str] = None, db_path: Optiona
 
 
 def list_saved_resumes(base_dir: Optional[str] = None, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
-    """List all persisted Resume/CV files available for reuse."""
+    """List all persisted Resume/CV files available for reuse with normalized contract."""
     registry.init_db(db_path)
     base, _, _, _ = get_storage_dirs(base_dir)
     with registry.get_connection(db_path) as conn:
@@ -380,9 +483,15 @@ def list_saved_resumes(base_dir: Optional[str] = None, db_path: Optional[str] = 
     valid = []
     for r in rows:
         try:
-            full_p = resolve_stored_path(r["stored_relative_path"], base)
+            stored_p = r.get("stored_relative_path") or r.get("stored_path")
+            full_p = resolve_stored_path(stored_p, base)
             if os.path.exists(full_p):
+                r["stored_path"] = stored_p
+                r["stored_relative_path"] = stored_p
                 r["stored_absolute_path"] = full_p
+                r["file_role"] = "resume"
+                r["sha256"] = r.get("sha256_hash")
+                r["uploaded_at"] = r.get("upload_timestamp")
                 valid.append(r)
         except Exception:
             continue

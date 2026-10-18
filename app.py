@@ -941,44 +941,56 @@ with col_workspace:
                     try:
                         raw_bytes = uploaded_jd.read()
                         saved_jd_meta = storage.save_job_description_file(raw_bytes, uploaded_jd.name)
-                        st.session_state.active_jd_file_id = saved_jd_meta["file_id"]
-                        st.session_state.active_jd_file_path = saved_jd_meta["stored_path"]
-                        st.session_state.last_saved_jd_sig = upload_sig
-
-                        extracted_jd, _ = parser.extract_text_from_file(raw_bytes, uploaded_jd.name)
-                        if extracted_jd and extracted_jd.strip():
-                            st.session_state.jd_text_val = extracted_jd
-                            st.session_state.last_parsed_jd_name = uploaded_jd.name
-                            st.session_state.jd_file_size_kb = round(len(raw_bytes) / 1024, 1)
-                            st.session_state.jd_status = ("success", f"✅ JD — {uploaded_jd.name} loaded successfully!")
-                            st.session_state.active_screening_record = None
+                        if saved_jd_meta.get("status") == "error":
+                            st.session_state.jd_status = ("error", f"❌ {saved_jd_meta.get('message', 'The job description could not be saved.')}")
                         else:
-                            st.session_state.jd_status = ("error", f"❌ Failed to parse '{html.escape(uploaded_jd.name)}'. File content is empty or unreadable.")
+                            st.session_state.active_jd_file_id = saved_jd_meta.get("file_id")
+                            st.session_state.active_jd_file_path = saved_jd_meta.get("stored_path") or saved_jd_meta.get("stored_relative_path")
+                            st.session_state.last_saved_jd_sig = upload_sig
+
+                            extracted_jd, _ = parser.extract_text_from_file(raw_bytes, uploaded_jd.name)
+                            if extracted_jd and extracted_jd.strip():
+                                st.session_state.jd_text_val = extracted_jd
+                                st.session_state.last_parsed_jd_name = uploaded_jd.name
+                                st.session_state.jd_file_size_kb = round(len(raw_bytes) / 1024, 1)
+                                st.session_state.jd_status = ("success", f"✅ JD — {uploaded_jd.name} loaded successfully!")
+                                st.session_state.active_screening_record = None
+                            else:
+                                st.session_state.jd_status = ("error", "❌ The file was saved, but text extraction failed. Check the file format and try again.")
                     except Exception as exc:
-                        st.session_state.jd_status = ("error", f"❌ Error saving/reading JD '{html.escape(uploaded_jd.name)}': {html.escape(str(exc))}")
+                        st.session_state.jd_status = ("error", "❌ The job description could not be loaded. Please try uploading it again.")
 
             # Reusable Saved JD Selector
             saved_jds = storage.list_saved_job_descriptions()
             if saved_jds:
                 with st.expander("📂 Reuse Previously Saved Job Description", expanded=False):
-                    jd_choices = {f"{j['original_filename']} ({j['upload_timestamp'][:10]}) [ID:{j['file_id'][:8]}]": j for j in saved_jds}
+                    jd_choices = {f"{j['original_filename']} ({str(j.get('upload_timestamp') or j.get('uploaded_at') or '')[:10]}) [ID:{str(j.get('file_id') or '')[:8]}]": j for j in saved_jds}
                     sel_saved_jd_key = st.selectbox("Select saved JD", options=["-- Select to Load --"] + list(jd_choices.keys()), key="sel_saved_jd_opt")
                     if sel_saved_jd_key != "-- Select to Load --":
                         chosen_jd = jd_choices[sel_saved_jd_key]
                         if st.button("Load This Saved JD", key="load_saved_jd_act_btn", use_container_width=True):
                             try:
-                                raw_bytes = storage.read_stored_file_bytes(chosen_jd["stored_path"])
-                                extracted_jd, _ = parser.extract_text_from_file(raw_bytes, chosen_jd["original_filename"])
-                                st.session_state.jd_text_val = extracted_jd
-                                st.session_state.last_parsed_jd_name = chosen_jd["original_filename"]
-                                st.session_state.active_jd_file_id = chosen_jd["file_id"]
-                                st.session_state.active_jd_file_path = chosen_jd["stored_path"]
-                                st.session_state.jd_file_size_kb = round(len(raw_bytes) / 1024, 1)
-                                st.session_state.jd_status = ("success", f"✅ Loaded saved JD — {chosen_jd['original_filename']}")
-                                st.session_state.active_screening_record = None
-                                st.rerun()
+                                stored_p = chosen_jd.get("stored_path") or chosen_jd.get("stored_relative_path")
+                                if not stored_p:
+                                    st.error("The saved job description file is missing its storage path.")
+                                else:
+                                    raw_bytes = storage.read_stored_file_bytes(stored_p)
+                                    extracted_jd, _ = parser.extract_text_from_file(raw_bytes, chosen_jd["original_filename"])
+                                    if not extracted_jd or not extracted_jd.strip():
+                                        st.error("The file was saved, but text extraction failed. Check the file format and try again.")
+                                    else:
+                                        st.session_state.jd_text_val = extracted_jd
+                                        st.session_state.last_parsed_jd_name = chosen_jd["original_filename"]
+                                        st.session_state.active_jd_file_id = chosen_jd.get("file_id")
+                                        st.session_state.active_jd_file_path = stored_p
+                                        st.session_state.jd_file_size_kb = round(len(raw_bytes) / 1024, 1)
+                                        st.session_state.jd_status = ("success", f"✅ Loaded saved JD — {chosen_jd['original_filename']}")
+                                        st.session_state.active_screening_record = None
+                                        st.rerun()
+                            except FileNotFoundError:
+                                st.error("The saved job description file is missing. Please upload the JD again.")
                             except Exception as err:
-                                st.error(f"Failed to load saved file: {err}")
+                                st.error("The job description could not be loaded. Please try uploading it again.")
 
             # Selected filename and file size
             if st.session_state.get("last_parsed_jd_name") and st.session_state.jd_text_val.strip():
@@ -1041,43 +1053,55 @@ with col_workspace:
                             cand_name = p_meta.get("name")
 
                         saved_cv_meta = storage.save_resume_file(raw_bytes, uploaded_cv.name, candidate_name=cand_name)
-                        st.session_state.active_resume_file_id = saved_cv_meta["file_id"]
-                        st.session_state.active_resume_file_path = saved_cv_meta["stored_path"]
-                        st.session_state.last_saved_cv_sig = upload_sig_cv
-
-                        if extracted_cv and extracted_cv.strip():
-                            st.session_state.cv_text_val = extracted_cv
-                            st.session_state.last_parsed_cv_name = uploaded_cv.name
-                            st.session_state.cv_file_size_kb = round(len(raw_bytes) / 1024, 1)
-                            st.session_state.cv_status = ("success", f"✅ Resume — {uploaded_cv.name} loaded successfully!")
-                            st.session_state.active_screening_record = None
+                        if saved_cv_meta.get("status") == "error":
+                            st.session_state.cv_status = ("error", f"❌ {saved_cv_meta.get('message', 'The candidate resume could not be saved.')}")
                         else:
-                            st.session_state.cv_status = ("error", f"❌ Failed to parse '{html.escape(uploaded_cv.name)}'. File content is empty or unreadable.")
+                            st.session_state.active_resume_file_id = saved_cv_meta.get("file_id")
+                            st.session_state.active_resume_file_path = saved_cv_meta.get("stored_path") or saved_cv_meta.get("stored_relative_path")
+                            st.session_state.last_saved_cv_sig = upload_sig_cv
+
+                            if extracted_cv and extracted_cv.strip():
+                                st.session_state.cv_text_val = extracted_cv
+                                st.session_state.last_parsed_cv_name = uploaded_cv.name
+                                st.session_state.cv_file_size_kb = round(len(raw_bytes) / 1024, 1)
+                                st.session_state.cv_status = ("success", f"✅ Resume — {uploaded_cv.name} loaded successfully!")
+                                st.session_state.active_screening_record = None
+                            else:
+                                st.session_state.cv_status = ("error", "❌ The file was saved, but text extraction failed. Check the file format and try again.")
                     except Exception as exc:
-                        st.session_state.cv_status = ("error", f"❌ Error saving/reading Resume '{html.escape(uploaded_cv.name)}': {html.escape(str(exc))}")
+                        st.session_state.cv_status = ("error", "❌ The candidate resume could not be loaded. Please try uploading it again.")
 
             # Reusable Saved Resume Selector
             saved_resumes = storage.list_saved_resumes()
             if saved_resumes:
                 with st.expander("📂 Reuse Previously Saved Candidate Resume", expanded=False):
-                    res_choices = {f"{r['candidate_name'] or r['original_filename']} — {r['original_filename']} ({r['upload_timestamp'][:10]}) [ID:{r['file_id'][:8]}]": r for r in saved_resumes}
+                    res_choices = {f"{r.get('candidate_name') or r['original_filename']} — {r['original_filename']} ({str(r.get('upload_timestamp') or r.get('uploaded_at') or '')[:10]}) [ID:{str(r.get('file_id') or '')[:8]}]": r for r in saved_resumes}
                     sel_saved_res_key = st.selectbox("Select saved Resume", options=["-- Select to Load --"] + list(res_choices.keys()), key="sel_saved_res_opt")
                     if sel_saved_res_key != "-- Select to Load --":
                         chosen_res = res_choices[sel_saved_res_key]
                         if st.button("Load This Saved Resume", key="load_saved_res_act_btn", use_container_width=True):
                             try:
-                                raw_bytes = storage.read_stored_file_bytes(chosen_res["stored_path"])
-                                extracted_cv, _ = parser.extract_text_from_file(raw_bytes, chosen_res["original_filename"])
-                                st.session_state.cv_text_val = extracted_cv
-                                st.session_state.last_parsed_cv_name = chosen_res["original_filename"]
-                                st.session_state.active_resume_file_id = chosen_res["file_id"]
-                                st.session_state.active_resume_file_path = chosen_res["stored_path"]
-                                st.session_state.cv_file_size_kb = round(len(raw_bytes) / 1024, 1)
-                                st.session_state.cv_status = ("success", f"✅ Loaded saved Resume — {chosen_res['original_filename']}")
-                                st.session_state.active_screening_record = None
-                                st.rerun()
+                                stored_p = chosen_res.get("stored_path") or chosen_res.get("stored_relative_path")
+                                if not stored_p:
+                                    st.error("The saved resume record is missing its storage path.")
+                                else:
+                                    raw_bytes = storage.read_stored_file_bytes(stored_p)
+                                    extracted_cv, _ = parser.extract_text_from_file(raw_bytes, chosen_res["original_filename"])
+                                    if not extracted_cv or not extracted_cv.strip():
+                                        st.error("The file was saved, but text extraction failed. Check the file format and try again.")
+                                    else:
+                                        st.session_state.cv_text_val = extracted_cv
+                                        st.session_state.last_parsed_cv_name = chosen_res["original_filename"]
+                                        st.session_state.active_resume_file_id = chosen_res.get("file_id")
+                                        st.session_state.active_resume_file_path = stored_p
+                                        st.session_state.cv_file_size_kb = round(len(raw_bytes) / 1024, 1)
+                                        st.session_state.cv_status = ("success", f"✅ Resume — {chosen_res['original_filename']} loaded successfully!")
+                                        st.session_state.active_screening_record = None
+                                        st.rerun()
+                            except FileNotFoundError:
+                                st.error("The saved resume file is missing. Please upload the resume again.")
                             except Exception as err:
-                                st.error(f"Failed to load saved file: {err}")
+                                st.error("The candidate resume could not be loaded. Please try uploading it again.")
 
             # Selected filename and file size
             if st.session_state.get("last_parsed_cv_name") and st.session_state.cv_text_val.strip():

@@ -218,6 +218,42 @@ def init_db(db_path: Optional[str] = None) -> None:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_screenings_candidate ON screenings(candidate_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_screenings_job ON screenings(job_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_screenings_score ON screenings(deterministic_score);")
+
+        # Safe Schema Migrations for stored_files
+        try:
+            cursor.execute("PRAGMA table_info(stored_files);")
+            existing_cols = {r["name"] for r in cursor.fetchall()}
+            if existing_cols:
+                if "stored_path" not in existing_cols:
+                    cursor.execute("ALTER TABLE stored_files ADD COLUMN stored_path TEXT;")
+                    cursor.execute("UPDATE stored_files SET stored_path = stored_relative_path WHERE stored_path IS NULL;")
+                if "file_role" not in existing_cols:
+                    cursor.execute("ALTER TABLE stored_files ADD COLUMN file_role TEXT;")
+                    cursor.execute("UPDATE stored_files SET file_role = file_type WHERE file_role IS NULL;")
+
+                # Repair legacy records where stored filename was saved without original extension
+                cursor.execute("SELECT file_id, original_filename, stored_relative_path FROM stored_files WHERE file_type = 'resume';")
+                for row in cursor.fetchall():
+                    orig_n = row["original_filename"] or ""
+                    curr_rel = row["stored_relative_path"] or ""
+                    _, exp_ext = os.path.splitext(orig_n)
+                    _, curr_ext = os.path.splitext(curr_rel)
+                    if exp_ext and not curr_ext:
+                        new_rel = curr_rel + exp_ext
+                        base_d = os.path.dirname(os.path.abspath(db_path or "data/fitment.db"))
+                        old_disk = os.path.normpath(os.path.join(base_d, "..", curr_rel))
+                        new_disk = os.path.normpath(os.path.join(base_d, "..", new_rel))
+                        if os.path.exists(old_disk) and not os.path.exists(new_disk):
+                            try:
+                                os.rename(old_disk, new_disk)
+                            except Exception:
+                                pass
+                        cursor.execute(
+                            "UPDATE stored_files SET stored_relative_path = ?, stored_path = ? WHERE file_id = ?;",
+                            (new_rel, new_rel, row["file_id"]),
+                        )
+        except Exception as mig_err:
+            logger.warning("Stored files migration check encountered notice: %s", mig_err)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_screenings_timestamp ON screenings(screening_timestamp);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_follow_ups_date ON follow_ups(follow_up_date);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_stored_files_hash ON stored_files(sha256_hash);")
@@ -639,10 +675,12 @@ def normalize_screening_files(files_data: Any) -> List[Dict[str, str]]:
                 else:
                     role_label = role_str.capitalize() if role_str else "Document"
 
+            sp = item.get("stored_path") or item.get("stored_relative_path") or ""
             normalized.append({
                 "original_filename": str(raw_name),
                 "file_role": role_label,
-                "stored_relative_path": str(item.get("stored_relative_path") or ""),
+                "stored_path": str(sp),
+                "stored_relative_path": str(sp),
                 "file_id": str(item.get("file_id") or ""),
             })
         elif isinstance(item, str):
@@ -661,6 +699,7 @@ def normalize_screening_files(files_data: Any) -> List[Dict[str, str]]:
             normalized.append({
                 "original_filename": name,
                 "file_role": role_label,
+                "stored_path": clean_str,
                 "stored_relative_path": clean_str,
                 "file_id": "",
             })
