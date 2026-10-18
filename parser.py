@@ -8,7 +8,7 @@ from __future__ import annotations
 import io
 import re
 from pathlib import Path
-from typing import BinaryIO, Union
+from typing import BinaryIO, Union, Any, Dict
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
@@ -265,3 +265,66 @@ def get_document_statistics(text: str) -> dict[str, int]:
         "character_count": char_count,
         "estimated_reading_minutes": estimated_read_minutes,
     }
+
+
+def extract_candidate_metadata_hybrid(
+    resume_text: str,
+) -> Dict[str, Any]:
+    """
+    Extracts candidate profile metadata (Name, Email, Mobile, Location, DOB,
+    Experience, Organization, Designation, Education, Certifications) from resume text.
+    Composes deterministic heuristic parsing with resilient fallback handling,
+    preventing application crashes on incomplete or malformed documents.
+    """
+    empty_meta: Dict[str, Any] = {
+        "name": "Candidate Profile",
+        "mobile": "Not available in CV",
+        "email": "Not Specified",
+        "location": "Not Specified",
+        "dob": "Not Specified",
+        "total_exp": "Not Specified",
+        "relevant_exp": "Not Specified",
+        "organization": "Not Detected (Requires human verification)",
+        "current_designation": "Not Detected (Requires human verification)",
+        "previous_organizations": [],
+        "education": "Not Detected (Requires human verification)",
+        "certifications": [],
+    }
+
+    if not resume_text or not isinstance(resume_text, str) or not resume_text.strip():
+        return empty_meta
+
+    try:
+        import deterministic_engine
+        meta = deterministic_engine.extract_candidate_metadata(resume_text)
+        if isinstance(meta, dict):
+            merged = empty_meta.copy()
+            merged.update(meta)
+            return merged
+    except Exception:
+        pass
+
+    # Resilient fallback if deterministic_engine cannot be reached
+    res = empty_meta.copy()
+    try:
+        # Extract email
+        em = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', resume_text)
+        if em:
+            res["email"] = em.group(0).strip().rstrip(".,;")
+            user_part = res["email"].split("@")[0]
+            words = [w.capitalize() for w in re.sub(r'[^A-Za-z]', ' ', user_part).split() if len(w) >= 2]
+            if words:
+                res["name"] = " ".join(words[:3])
+
+        # Extract mobile
+        mob = re.search(r'(?:contact|mobile|phone|cell)[\s:–-]*([+]?[0-9\s().-]{10,20})', resume_text, re.IGNORECASE)
+        if mob:
+            res["mobile"] = mob.group(1).strip()
+    except Exception:
+        pass
+
+    return res
+
+
+# Backward compatibility and standard naming alias
+extract_candidate_metadata = extract_candidate_metadata_hybrid

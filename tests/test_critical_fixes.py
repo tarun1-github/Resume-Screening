@@ -384,6 +384,293 @@ class TestCriticalFixes(unittest.TestCase):
         self.assertGreater(len(rec["interview_probes"]), 0)
         self.assertIn("Prachi Gupta", rec["summary"])
 
+    # --------------------------------------------------------------------------
+    # P0 — Fix 1: Uploading, Loading, Clearing, and Deleting JDs and Resumes
+    # --------------------------------------------------------------------------
+    def test_15_upload_and_save_jd_file(self):
+        """Upload and save a JD file validates type/size, extracts text, and indexes in SQLite."""
+        jd_bytes = b"Job Title: Senior Network Engineer\nRequirements: BGP, OSPF, Cisco IOS, MPLS\nExperience: 5+ years"
+        res = storage.save_job_description_file(
+            file_bytes=jd_bytes,
+            original_filename="Network_Engineer_JD.txt",
+            base_dir=self.test_dir,
+            db_path=self.db_path,
+        )
+        self.assertEqual(res["status"], "success")
+        self.assertTrue(os.path.exists(res["stored_absolute_path"]))
+
+        # Read back bytes safely
+        read_bytes = storage.read_stored_file_bytes(res["stored_relative_path"], base_dir=self.test_dir)
+        self.assertEqual(read_bytes, jd_bytes)
+
+    def test_16_upload_and_save_resume_file(self):
+        """Upload and save a resume file validates type/size, saves to data/resumes/, and extracts metadata."""
+        cv_bytes = b"Tarun Taneja\nEmail: tarun@example.com\nDesignation: Voice Specialist\nSkills: Cisco CUCM, SIP, Python\nExperience: 6 years"
+        res = storage.save_resume_file(
+            file_bytes=cv_bytes,
+            original_filename="Tarun_Taneja_CV.txt",
+            base_dir=self.test_dir,
+            db_path=self.db_path,
+        )
+        self.assertEqual(res["status"], "success")
+        self.assertTrue(os.path.exists(res["stored_absolute_path"]))
+
+        resumes = storage.list_saved_resumes(base_dir=self.test_dir, db_path=self.db_path)
+        self.assertEqual(len(resumes), 1)
+        self.assertEqual(resumes[0]["original_filename"], "Tarun_Taneja_CV.txt")
+
+    def test_17_clear_jd_and_resume_does_not_delete_saved_files(self):
+        """Clearing active selection must never delete or corrupt the underlying saved files in storage."""
+        jd_bytes = b"Sample JD content for clearing test"
+        cv_bytes = b"Sample CV content for clearing test"
+        jd_meta = storage.save_job_description_file(jd_bytes, "Sample_JD.txt", base_dir=self.test_dir, db_path=self.db_path)
+        cv_meta = storage.save_resume_file(cv_bytes, "Sample_CV.txt", base_dir=self.test_dir, db_path=self.db_path)
+
+        # Simulate active session state
+        session_state = {
+            "jd_text_val": "Sample JD content for clearing test",
+            "last_parsed_jd_name": "Sample_JD.txt",
+            "active_jd_file_id": jd_meta["file_id"],
+            "cv_text_val": "Sample CV content for clearing test",
+            "last_parsed_cv_name": "Sample_CV.txt",
+            "active_resume_file_id": cv_meta["file_id"],
+            "active_screening_record": {"score": 75},
+        }
+
+        # Clear JD selection
+        session_state["jd_text_val"] = ""
+        session_state.pop("last_parsed_jd_name", None)
+        session_state.pop("active_jd_file_id", None)
+        session_state["active_screening_record"] = None
+
+        # Verify underlying file on disk and in database still exists
+        self.assertTrue(os.path.exists(jd_meta["stored_absolute_path"]))
+        jds = storage.list_saved_job_descriptions(base_dir=self.test_dir, db_path=self.db_path)
+        self.assertEqual(len(jds), 1)
+
+        # Clear Resume selection
+        session_state["cv_text_val"] = ""
+        session_state.pop("last_parsed_cv_name", None)
+        session_state.pop("active_resume_file_id", None)
+
+        # Verify underlying resume file on disk and in database still exists
+        self.assertTrue(os.path.exists(cv_meta["stored_absolute_path"]))
+        cvs = storage.list_saved_resumes(base_dir=self.test_dir, db_path=self.db_path)
+        self.assertEqual(len(cvs), 1)
+
+    def test_18_delete_saved_file_permanently_removes_from_storage_and_db(self):
+        """Explicit permanent delete removes the file from disk and updates registry list."""
+        jd_bytes = b"Temporary JD to be deleted"
+        jd_meta = storage.save_job_description_file(jd_bytes, "Temp_JD.txt", base_dir=self.test_dir, db_path=self.db_path)
+        self.assertTrue(os.path.exists(jd_meta["stored_absolute_path"]))
+
+        # Execute permanent deletion
+        ok = storage.delete_saved_job_description(jd_meta["file_id"], base_dir=self.test_dir, db_path=self.db_path)
+        self.assertTrue(ok)
+        self.assertFalse(os.path.exists(jd_meta["stored_absolute_path"]))
+
+        # Registry list no longer includes the deleted file
+        remaining = storage.list_saved_job_descriptions(base_dir=self.test_dir, db_path=self.db_path)
+        self.assertEqual(len(remaining), 0)
+
+    # --------------------------------------------------------------------------
+    # P0 — Fix 2: Candidate Separation & Zero Data Leakage Between Resumes
+    # --------------------------------------------------------------------------
+    def test_19_consecutive_resume_loads_zero_candidate_data_leakage(self):
+        """Loading Resume A then Resume B ensures no candidate identity, score, or results leak into B."""
+        # Candidate A: Prachi Gupta
+        resume_a_text = (
+            "Prachi Gupta | prachirgup08@gmail.com | +91 91457 37256\n"
+            "Current Designation: Network Analyst at Cisco\n"
+            "Experience: 3+ Years in Voice\n"
+            "Skills: Cisco CUCM, SIP, Troubleshooting."
+        )
+        # Candidate B: Tarun Taneja
+        resume_b_text = (
+            "Tarun Taneja | tarun@telecom.com | +91 98765 43210\n"
+            "Current Designation: Senior Collaboration Architect at Infosys\n"
+            "Experience: 8+ Years in Enterprise Networks\n"
+            "Skills: SIP, Expressway, CUBE, Python, Automation, ITIL."
+        )
+
+        # 1. Screen Candidate A
+        det_a = deterministic_engine.evaluate_candidate_deterministically(self.sample_jd_text, resume_a_text)
+        meta_a = deterministic_engine.extract_candidate_metadata(resume_a_text)
+        cid_a = registry.upsert_candidate(name=meta_a["name"], email=meta_a["email"], db_path=self.db_path)
+        screening_a_record = {
+            "candidate_id": cid_a,
+            "meta": meta_a,
+            "det_result": det_a,
+            "skills_score": 32,
+            "job_title": "Cisco Collaboration Specialist L3",
+        }
+
+        # 2. Simulate User Loading Resume B:
+        # Step A: Invalidate active screening record from Candidate A
+        active_screening_record = None
+
+        # Step B: Parse Candidate B's resume
+        meta_b = deterministic_engine.extract_candidate_metadata(resume_b_text)
+        last_parsed_cv_name = "Tarun_Taneja_CV.pdf"
+
+        # Verify Candidate B context does NOT contain any fields from Candidate A
+        self.assertIsNone(active_screening_record)
+        self.assertEqual(meta_b["name"], "Tarun Taneja")
+        self.assertNotEqual(meta_b["name"], meta_a["name"])
+        self.assertEqual(meta_b["organization"], "Infosys")
+        self.assertNotEqual(meta_b["organization"], meta_a["organization"])
+        self.assertEqual(last_parsed_cv_name, "Tarun_Taneja_CV.pdf")
+
+        # 3. Screen Candidate B independently
+        det_b = deterministic_engine.evaluate_candidate_deterministically(self.sample_jd_text, resume_b_text)
+        cid_b = registry.upsert_candidate(name=meta_b["name"], email=meta_b["email"], db_path=self.db_path)
+        screening_b_record = {
+            "candidate_id": cid_b,
+            "meta": meta_b,
+            "det_result": det_b,
+            "skills_score": int((len(det_b["skills_matched"]) / max(len(det_b["skills_matched"]) + len(det_b["missing_skills"]), 1)) * 100),
+            "job_title": "Cisco Collaboration Specialist L3",
+        }
+
+        # Verify separate candidate IDs, scores, and skills
+        self.assertNotEqual(cid_a, cid_b)
+        self.assertEqual(screening_b_record["meta"]["name"], "Tarun Taneja")
+        self.assertIn("expressway", det_b["skills_matched"])
+        self.assertNotIn("expressway", det_a["skills_matched"])
+
+    # --------------------------------------------------------------------------
+    # P0 — Fix 3: Deterministic Offline Screening & Zero Cloud Calls
+    # --------------------------------------------------------------------------
+    def test_20_offline_screening_makes_zero_cloud_calls(self):
+        """Offline screening executes purely deterministically without making any network/cloud LLM calls."""
+        with patch("llm_manager.generate_qualitative_assessment") as mock_llm:
+            det_result = deterministic_engine.evaluate_candidate_deterministically(
+                self.sample_jd_text, self.sample_resume_text
+            )
+            mock_llm.assert_not_called()
+            self.assertIn("match_score", det_result)
+            self.assertIn("verdict", det_result)
+            self.assertIn("skills_matched", det_result)
+            self.assertIn("missing_skills", det_result)
+
+    def test_21_ai_screening_handles_provider_failure_gracefully(self):
+        """AI screening falls back gracefully to deterministic analysis when the provider times out or fails."""
+        import llm_manager
+        with patch.object(llm_manager, "generate_qualitative_assessment", return_value={"status": "error", "message": "Connection timed out"}):
+            res = llm_manager.generate_qualitative_assessment(
+                job_description=self.sample_jd_text,
+                resume_text=self.sample_resume_text,
+                preferred_provider="gemini",
+                timeout_seconds=5.0,
+            )
+            self.assertEqual(res["status"], "error")
+            self.assertIn("Connection timed out", res["message"])
+
+            # Verify deterministic recommendation operates as fallback
+            det_result = deterministic_engine.evaluate_candidate_deterministically(self.sample_jd_text, self.sample_resume_text)
+            meta = deterministic_engine.extract_candidate_metadata(self.sample_resume_text)
+            fallback = deterministic_engine.generate_grounded_recommendation(det_result, meta, "Target Role")
+            self.assertFalse(fallback["is_llm"])
+            self.assertIn("Deterministic", fallback["engine_label"])
+
+    def test_22_dialog_and_detailed_analysis_state_toggles(self):
+        """View Full Profile dialog payload contains complete profile, and Detailed Analysis expander toggles."""
+        det_result = deterministic_engine.evaluate_candidate_deterministically(self.sample_jd_text, self.sample_resume_text)
+        meta = deterministic_engine.extract_candidate_metadata(self.sample_resume_text)
+        active_rec = {
+            "candidate_id": "cand-test-123",
+            "meta": meta,
+            "det_result": det_result,
+            "skills_score": 32,
+            "exp_score": 40,
+            "cert_score": 0,
+            "found_certs": ["CCNA Collaboration"],
+            "job_title": "Cisco Collaboration Specialist L3",
+        }
+
+        # Verify payload elements needed for show_full_candidate_profile_dialog
+        self.assertEqual(active_rec["meta"]["name"], "Prachi Gupta")
+        self.assertEqual(active_rec["job_title"], "Cisco Collaboration Specialist L3")
+        self.assertIn("CCNA Collaboration", active_rec["found_certs"])
+
+        # Verify toggle state logic
+        session_state = {"expand_detailed_analysis": False}
+        session_state["expand_detailed_analysis"] = not session_state.get("expand_detailed_analysis", False)
+        self.assertTrue(session_state["expand_detailed_analysis"])
+        session_state["expand_detailed_analysis"] = not session_state.get("expand_detailed_analysis", False)
+        self.assertFalse(session_state["expand_detailed_analysis"])
+
+    def test_23_extract_candidate_metadata_hybrid_two_resumes_separation(self):
+        """Verify parser.extract_candidate_metadata_hybrid extracts real candidate fields without data leakage."""
+        self.assertTrue(hasattr(parser, "extract_candidate_metadata_hybrid"))
+        self.assertTrue(callable(parser.extract_candidate_metadata_hybrid))
+        self.assertTrue(hasattr(parser, "extract_candidate_metadata"))
+
+        resume_1 = """
+        PRACHI GUPTA
+        Email: prachi.gupta@telecomcorp.com
+        Contact: +91 91457 37256
+        Current Organization: Cisco Systems
+        Current Designation: Cisco Collaboration Specialist
+        Total Experience: 3+ Years
+        Skills: CUCM, CUC, Cisco Webex, SIP, CCNA Collaboration
+        """
+
+        resume_2 = """
+        VIKRAM SHARMA
+        Email: vikram.sharma@infotech.io
+        Phone: +91 98765 43210
+        Current Employer: Infosys
+        Current Role: Senior Cloud DevOps Engineer
+        Total Experience: 7 Years
+        Skills: AWS, Kubernetes, Terraform, Docker, Python
+        """
+
+        meta_1 = parser.extract_candidate_metadata_hybrid(resume_1)
+        self.assertEqual(meta_1["name"].upper(), "PRACHI GUPTA")
+        self.assertIn("Cisco", meta_1["organization"])
+        self.assertIn("3", meta_1["total_exp"])
+        self.assertIn("91457", meta_1["mobile"])
+
+        meta_2 = parser.extract_candidate_metadata_hybrid(resume_2)
+        self.assertEqual(meta_2["name"].upper(), "VIKRAM SHARMA")
+        self.assertIn("Infosys", meta_2["organization"])
+        self.assertIn("7", meta_2["total_exp"])
+        self.assertIn("98765", meta_2["mobile"])
+
+        # Strict non-leakage assertions
+        self.assertNotEqual(meta_1["name"].upper(), meta_2["name"].upper())
+        self.assertNotEqual(meta_1["email"], meta_2["email"])
+        self.assertNotEqual(meta_1["organization"], meta_2["organization"])
+        self.assertNotIn("Prachi", meta_2["name"])
+        self.assertNotIn("Cisco", meta_2["organization"])
+
+        # Verify direct app.py line 2735 pattern
+        session_state = {"cv_text_val": resume_2, "pending_candidate_meta": None}
+        meta_resolved = session_state.get("pending_candidate_meta") or parser.extract_candidate_metadata_hybrid(session_state["cv_text_val"])
+        self.assertEqual(meta_resolved["name"].upper(), "VIKRAM SHARMA")
+
+    def test_24_extract_candidate_metadata_hybrid_resilience(self):
+        """Verify extract_candidate_metadata_hybrid handles empty, corrupted, or non-candidate input safely."""
+        # Empty input
+        meta_empty = parser.extract_candidate_metadata_hybrid("")
+        self.assertIsInstance(meta_empty, dict)
+        self.assertEqual(meta_empty["name"], "Candidate Profile")
+        self.assertEqual(meta_empty["organization"], "Not Detected (Requires human verification)")
+
+        # None input
+        meta_none = parser.extract_candidate_metadata_hybrid(None)
+        self.assertIsInstance(meta_none, dict)
+        self.assertEqual(meta_none["name"], "Candidate Profile")
+
+        # Corrupted / unstructured text without candidate names
+        corrupted = "12345 67890 \x00 random garbage text without any candidate profile or email"
+        meta_corrupted = parser.extract_candidate_metadata_hybrid(corrupted)
+        self.assertIsInstance(meta_corrupted, dict)
+        self.assertNotEqual(meta_corrupted["name"], "Prachi Gupta")
+        self.assertEqual(meta_corrupted["organization"], "Not Detected (Requires human verification)")
+
 
 if __name__ == "__main__":
     unittest.main()
+

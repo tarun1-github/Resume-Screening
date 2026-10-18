@@ -496,3 +496,35 @@ def list_saved_resumes(base_dir: Optional[str] = None, db_path: Optional[str] = 
         except Exception:
             continue
     return valid
+
+
+def delete_stored_file(file_id: str, base_dir: Optional[str] = None, db_path: Optional[str] = None) -> bool:
+    """Permanently deletes a stored file from disk and SQLite stored_files index."""
+    base, _, _, _ = get_storage_dirs(base_dir)
+    with registry.get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT stored_relative_path, stored_path FROM stored_files WHERE file_id = ?", (file_id,))
+        row = cursor.fetchone()
+        if not row:
+            return False
+        rel_p = row["stored_relative_path"] or row["stored_path"]
+        if rel_p:
+            try:
+                full_p = resolve_stored_path(rel_p, base)
+                if os.path.exists(full_p):
+                    os.remove(full_p)
+            except Exception:
+                pass
+        cursor.execute("DELETE FROM stored_files WHERE file_id = ?", (file_id,))
+        conn.commit()
+    return True
+
+
+def delete_saved_job_description(file_id: str, base_dir: Optional[str] = None, db_path: Optional[str] = None) -> bool:
+    """Permanently deletes a saved Job Description from storage."""
+    return delete_stored_file(file_id, base_dir, db_path)
+
+
+def delete_saved_resume(file_id: str, base_dir: Optional[str] = None, db_path: Optional[str] = None) -> bool:
+    """Permanently deletes a saved Candidate Resume from storage."""
+    return delete_stored_file(file_id, base_dir, db_path)

@@ -33,6 +33,8 @@ if not hasattr(deterministic_engine, "analyze_skill_gaps"):
     deterministic_engine = importlib.reload(deterministic_engine)
 if not hasattr(registry, "get_dashboard_analytics_summary"):
     registry = importlib.reload(registry)
+if not hasattr(parser, "extract_candidate_metadata_hybrid"):
+    parser = importlib.reload(parser)
 
 load_dotenv()
 
@@ -84,8 +86,10 @@ st.markdown(
     /* ELIMINATE STREAMLIT CHROME OVERHEAD & RESTRICT TO DESKTOP VIEWPORT SCALE */
     header[data-testid="stHeader"] {
         background-color: transparent !important;
-        height: 1.5rem !important;
-        z-index: 99 !important;
+        min-height: 2.2rem !important;
+        height: auto !important;
+        z-index: 999 !important;
+        overflow: visible !important;
     }
     .stDeployButton,
     [data-testid="stToolbar"],
@@ -93,9 +97,22 @@ st.markdown(
     footer {
         display: none !important;
     }
-    [data-testid="stSidebarCollapseButton"] {
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"] {
         display: flex !important;
         visibility: visible !important;
+        opacity: 1 !important;
+        z-index: 999999 !important;
+    }
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"] {
+        top: 8px !important;
+        left: 8px !important;
+        background: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 2px 6px rgba(16, 35, 78, 0.08) !important;
     }
     .block-container {
         max-width: 1536px !important;
@@ -104,6 +121,27 @@ st.markdown(
         padding-bottom: 2rem !important;
         padding-left: 1.8rem !important;
         padding-right: 1.8rem !important;
+    }
+
+    /* CUSTOM ACTION BUTTONS MATCHING SCREENSHOT B (VIEW FULL PROFILE & VIEW DETAILED ANALYSIS) */
+    div[data-testid="stButton"] button[key="btn_view_full_profile"],
+    div[data-testid="stButton"] button[key="btn_view_detailed_analysis"] {
+        background: #EFF6FF !important;
+        border: 1px solid #BFDBFE !important;
+        color: #2164F3 !important;
+        font-size: 12px !important;
+        font-weight: 700 !important;
+        border-radius: 8px !important;
+        height: 34px !important;
+        padding: 4px 12px !important;
+        box-shadow: none !important;
+        transition: all 0.15s ease !important;
+    }
+    div[data-testid="stButton"] button[key="btn_view_full_profile"]:hover,
+    div[data-testid="stButton"] button[key="btn_view_detailed_analysis"]:hover {
+        background: #DBEAFE !important;
+        border-color: #93C5FD !important;
+        color: #1D4ED8 !important;
     }
 
     /* TYPOGRAPHY HIERARCHY */
@@ -1073,6 +1111,90 @@ def render_html(raw_html: str) -> None:
     st.markdown("\n".join(clean_lines), unsafe_allow_html=True)
 
 
+@st.dialog("👤 Candidate Full Profile & Recruitment Dossier")
+def show_full_candidate_profile_dialog(active_rec: dict):
+    """Renders comprehensive candidate profile and recruitment dossier modal."""
+    meta = active_rec.get("meta", {})
+    det = active_rec.get("det_result", {})
+    score = det.get("match_score", 0)
+    cand_id = active_rec.get("candidate_id")
+    job_title = active_rec.get("job_title", "Target Technical Role")
+    found_certs = active_rec.get("found_certs") or det.get("certifications_detected") or meta.get("certifications") or []
+
+    cand_db = registry.get_candidate_by_id(cand_id) if cand_id else None
+    cur_status = cand_db.get("current_status", "Screened") if cand_db else "Screened"
+
+    st.markdown(
+        f"""
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="margin: 0; color: #10234E; font-size: 18px; font-weight: 800;">{html.escape(meta.get('name', 'Candidate'))}</h3>
+                    <p style="margin: 2px 0 0 0; color: #64748B; font-size: 13px;">{html.escape(meta.get('current_designation', 'Not Detected'))} • {html.escape(meta.get('organization', 'Not Detected'))}</p>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 11px; color: #64748B; font-weight: 700;">FITMENT SCORE</div>
+                    <div style="font-size: 20px; font-weight: 900; color: #EA580C;">{score} <span style="font-size: 13px; color: #64748B; font-weight: 600;">/ 100</span></div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    t1, t2, t3 = st.tabs(["📋 Profile & Experience", "🎯 Fitment & Skills", "📝 Lifecycle Status"])
+    with t1:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f"- **Target Role:** {job_title}")
+            st.markdown(f"- **Total Experience:** {meta.get('total_exp', 'Not Detected')}")
+            st.markdown(f"- **Relevant Experience:** {meta.get('relevant_exp', 'Not Detected')}")
+            st.markdown(f"- **Location:** {meta.get('location', 'Not Specified')}")
+        with c2:
+            raw_mob = meta.get('mobile', '+91 91457 *****')
+            masked_mob = re.sub(r'(\+?\d{2,4}\s?\d{2,3})\d{4,5}', r'\1*****', raw_mob) if raw_mob else '+91 91457 *****'
+            st.markdown(f"- **Contact:** `{masked_mob}`")
+            st.markdown(f"- **Email:** `{meta.get('email', 'Confidential')}`")
+            st.markdown(f"- **Education:** {meta.get('education', 'Not Specified')}")
+            st.markdown(f"- **Resume Ref:** `{html.escape(st.session_state.get('last_parsed_cv_name') or 'Candidate_CV.pdf')}`")
+
+        prev_orgs = meta.get("previous_organizations", [])
+        if prev_orgs:
+            st.markdown(f"**Previous Organizations:** {', '.join(prev_orgs)}")
+
+        if found_certs:
+            st.markdown(f"**Accreditations & Certifications:** {', '.join(found_certs)}")
+
+    with t2:
+        st.markdown(f"- **Deterministic Verdict:** **{det.get('verdict', 'N/A')}**")
+        st.markdown(f"- **Recruiter Recommendation:** {det.get('recommendation', 'N/A')}")
+        st.markdown(f"- **Skills Alignment:** {active_rec.get('skills_score', 0)}%")
+        st.markdown(f"- **Experience Alignment:** {active_rec.get('exp_score', 0)}%")
+        st.markdown(f"- **Accreditation Alignment:** {active_rec.get('cert_score', 0)}%")
+        if det.get("skills_matched"):
+            st.markdown(f"**Matched Skills:** {', '.join(det['skills_matched'])}")
+        if det.get("missing_skills"):
+            st.markdown(f"**Missing Skills:** {', '.join(det['missing_skills'][:15])}")
+
+    with t3:
+        st.markdown("##### Update Recruitment Stage")
+        cur_idx = registry.CANDIDATE_STATUSES.index(cur_status) if cur_status in registry.CANDIDATE_STATUSES else 1
+        new_st = st.selectbox("Stage", options=registry.CANDIDATE_STATUSES, index=cur_idx, key=f"dlg_status_{cand_id}")
+        dlg_note = st.text_input("Recruiter Note", key=f"dlg_notes_{cand_id}", placeholder="Status notes...")
+        if st.button("Save Lifecycle Status", key=f"dlg_save_{cand_id}", type="primary", use_container_width=True):
+            if cand_id:
+                registry.update_candidate_status(cand_id, new_st, notes=dlg_note, changed_by="Bharat Raparthy")
+                st.success(f"Updated status to {new_st}!")
+                time.sleep(0.3)
+                st.rerun()
+
+    st.markdown("---")
+    if st.button("📋 Open in Candidate Tracker", key="dlg_open_tracker_btn", use_container_width=True):
+        st.session_state.sidebar_nav_radio = "📋 Candidate Tracker"
+        st.session_state.selected_nav = "📋 Candidate Tracker"
+        st.rerun()
+
+
 # --- LOAD REAL DASHBOARD ANALYTICS (ZERO MOCK DATA) ---
 if not hasattr(registry, "get_dashboard_analytics_summary"):
     import importlib
@@ -1422,8 +1544,9 @@ with col_workspace:
     # VIEW 1: SCREENING DASHBOARD
     # --------------------------------------------------------------------------
     if chosen_nav == "🏠 Screening Dashboard":
-        # Initialize default screening state from database if none active (loads Prachi Gupta matching Screenshot B)
-        if "active_screening_record" not in st.session_state or st.session_state.active_screening_record is None:
+        # Initialize default screening state from database ONLY ONCE on initial session load (loads Prachi Gupta matching Screenshot B)
+        if not st.session_state.get("initial_dashboard_seeded", False):
+            st.session_state.initial_dashboard_seeded = True
             try:
                 prachi = registry.find_candidate_by_name("Prachi Gupta")
                 if prachi:
@@ -1577,29 +1700,45 @@ with col_workspace:
                     sel_saved_jd_key = st.selectbox("Select saved JD", options=["-- Select to Load --"] + list(jd_choices.keys()), key="sel_saved_jd_opt")
                     if sel_saved_jd_key != "-- Select to Load --":
                         chosen_jd = jd_choices[sel_saved_jd_key]
-                        if st.button("Load Selected JD", key="load_saved_jd_act_btn", use_container_width=True):
-                            try:
-                                stored_p = chosen_jd.get("stored_path") or chosen_jd.get("stored_relative_path")
-                                if stored_p:
-                                    raw_bytes = storage.read_stored_file_bytes(stored_p)
-                                    extracted_jd, _ = parser.extract_text_from_file(raw_bytes, chosen_jd["original_filename"])
-                                    if extracted_jd and extracted_jd.strip():
-                                        st.session_state.jd_text_val = extracted_jd
-                                        st.session_state.last_parsed_jd_name = chosen_jd["original_filename"]
-                                        st.session_state.active_jd_file_id = chosen_jd.get("file_id")
-                                        st.session_state.active_jd_file_path = stored_p
-                                        st.session_state.jd_file_size_kb = round(len(raw_bytes) / 1024, 1)
-                                        st.session_state.flash_jd_notification = ("success", f'Load JD "{chosen_jd["original_filename"]}" successfully!')
-                                        st.session_state.active_screening_record = None
-                                        st.session_state.show_load_jd_expander = False
-                                        st.rerun()
+                        lj_c1, lj_c2 = st.columns([2, 1])
+                        with lj_c1:
+                            if st.button("Load Selected JD", key="load_saved_jd_act_btn", use_container_width=True):
+                                try:
+                                    stored_p = chosen_jd.get("stored_path") or chosen_jd.get("stored_relative_path")
+                                    if stored_p:
+                                        raw_bytes = storage.read_stored_file_bytes(stored_p)
+                                        extracted_jd, _ = parser.extract_text_from_file(raw_bytes, chosen_jd["original_filename"])
+                                        if extracted_jd and extracted_jd.strip():
+                                            st.session_state.jd_text_val = extracted_jd
+                                            st.session_state.last_parsed_jd_name = chosen_jd["original_filename"]
+                                            st.session_state.active_jd_file_id = chosen_jd.get("file_id")
+                                            st.session_state.active_jd_file_path = stored_p
+                                            st.session_state.jd_file_size_kb = round(len(raw_bytes) / 1024, 1)
+                                            st.session_state.flash_jd_notification = ("success", f'Load JD "{chosen_jd["original_filename"]}" successfully!')
+                                            st.session_state.active_screening_record = None
+                                            st.session_state.show_load_jd_expander = False
+                                            st.rerun()
+                                        else:
+                                            st.error(f"Saved JD '{chosen_jd['original_filename']}' contains no readable text.")
                                     else:
-                                        st.error(f"Saved JD '{chosen_jd['original_filename']}' contains no readable text.")
+                                        st.error("Saved JD file path could not be resolved.")
+                                except Exception as err:
+                                    st.session_state.flash_jd_notification = ("error", f"Error loading JD: {err}")
+                                    st.rerun()
+                        with lj_c2:
+                            if st.button("🗑️ Delete", key="del_saved_jd_act_btn", help="Permanently delete this saved JD from storage", use_container_width=True):
+                                ok = storage.delete_saved_job_description(chosen_jd["file_id"])
+                                if ok:
+                                    if st.session_state.get("active_jd_file_id") == chosen_jd["file_id"]:
+                                        st.session_state.jd_text_val = ""
+                                        st.session_state.pop("last_parsed_jd_name", None)
+                                        st.session_state.pop("active_jd_file_id", None)
+                                        st.session_state.active_screening_record = None
+                                    st.session_state.flash_jd_notification = ("success", f'Deleted JD "{chosen_jd["original_filename"]}" from storage.')
+                                    st.session_state.show_load_jd_expander = False
+                                    st.rerun()
                                 else:
-                                    st.error("Saved JD file path could not be resolved.")
-                            except Exception as err:
-                                st.session_state.flash_jd_notification = ("error", f"Error loading JD: {err}")
-                                st.rerun()
+                                    st.error("Could not delete saved JD.")
                 else:
                     st.info("No saved Job Descriptions found in registry storage.")
 
@@ -1625,16 +1764,18 @@ with col_workspace:
                     )
                 with chip_c2:
                     st.markdown('<div class="trash-icon-btn">', unsafe_allow_html=True)
-                    if st.button("🗑️", key="remove_jd_btn", help="Clear current Job Description", use_container_width=True):
+                    if st.button("🗑️", key="remove_jd_btn", help="Clear current Job Description selection (preserves saved record)", use_container_width=True):
                         st.session_state.jd_text_val = ""
                         st.session_state.pop("last_parsed_jd_name", None)
+                        st.session_state.pop("active_jd_file_id", None)
                         st.session_state.pop("jd_status", None)
                         st.session_state.active_screening_record = None
+                        st.session_state.flash_jd_notification = ("success", "Cleared Job Description selection.")
                         st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
             else:
                 uploaded_jd = st.file_uploader(
-                    "Upload Job Description (.pdf, .docx, .txt)",
+                    "Upload Job Description (.pdf, .docx, .doc, .txt)",
                     type=["pdf", "docx", "doc", "txt"],
                     key="jd_file_upload",
                     label_visibility="collapsed",
@@ -1644,9 +1785,14 @@ with col_workspace:
                     if st.session_state.get("last_saved_jd_sig") != upload_sig:
                         try:
                             raw_bytes = uploaded_jd.read()
+                            is_val, v_err = storage.validate_file_upload(uploaded_jd.name, raw_bytes)
+                            if not is_val:
+                                st.session_state.flash_jd_notification = ("error", f"❌ {v_err}")
+                                st.rerun()
                             saved_jd_meta = storage.save_job_description_file(raw_bytes, uploaded_jd.name)
                             if saved_jd_meta.get("status") == "error":
-                                st.session_state.jd_status = ("error", f"❌ {saved_jd_meta.get('message', 'The job description could not be saved.')}")
+                                st.session_state.flash_jd_notification = ("error", f"❌ {saved_jd_meta.get('message', 'The job description could not be saved.')}")
+                                st.rerun()
                             else:
                                 st.session_state.active_jd_file_id = saved_jd_meta.get("file_id")
                                 st.session_state.active_jd_file_path = saved_jd_meta.get("stored_path") or saved_jd_meta.get("stored_relative_path")
@@ -1657,11 +1803,15 @@ with col_workspace:
                                     st.session_state.jd_text_val = extracted_jd
                                     st.session_state.last_parsed_jd_name = uploaded_jd.name
                                     st.session_state.jd_file_size_kb = round(len(raw_bytes) / 1024, 1)
-                                    st.session_state.jd_status = ("success", f"✅ JD — {uploaded_jd.name} loaded successfully!")
+                                    st.session_state.flash_jd_notification = ("success", f'Load JD "{uploaded_jd.name}" successfully!')
                                     st.session_state.active_screening_record = None
                                     st.rerun()
+                                else:
+                                    st.session_state.flash_jd_notification = ("error", "❌ Uploaded file contains no extractable text.")
+                                    st.rerun()
                         except Exception as exc:
-                            st.session_state.jd_status = ("error", "❌ The job description could not be loaded. Please try uploading it again.")
+                            st.session_state.flash_jd_notification = ("error", f"❌ The job description could not be loaded: {exc}")
+                            st.rerun()
 
             # Expandable JD Preview
             with st.expander("📄 Preview Extracted Job Description", expanded=False):
@@ -1711,29 +1861,117 @@ with col_workspace:
                     sel_saved_res_key = st.selectbox("Select saved Resume", options=["-- Select to Load --"] + list(res_choices.keys()), key="sel_saved_res_opt")
                     if sel_saved_res_key != "-- Select to Load --":
                         chosen_res = res_choices[sel_saved_res_key]
-                        if st.button("Load Selected Resume", key="load_saved_res_act_btn", use_container_width=True):
-                            try:
-                                stored_p = chosen_res.get("stored_path") or chosen_res.get("stored_relative_path")
-                                if stored_p:
-                                    raw_bytes = storage.read_stored_file_bytes(stored_p)
-                                    extracted_cv, _ = parser.extract_text_from_file(raw_bytes, chosen_res["original_filename"])
-                                    if extracted_cv and extracted_cv.strip():
-                                        st.session_state.cv_text_val = extracted_cv
-                                        st.session_state.last_parsed_cv_name = chosen_res["original_filename"]
-                                        st.session_state.active_resume_file_id = chosen_res.get("file_id")
-                                        st.session_state.active_resume_file_path = stored_p
-                                        st.session_state.cv_file_size_kb = round(len(raw_bytes) / 1024, 1)
-                                        st.session_state.flash_cv_notification = ("success", f'Load CV "{chosen_res["original_filename"]}" successfully!')
-                                        st.session_state.active_screening_record = None
-                                        st.session_state.show_load_cv_expander = False
-                                        st.rerun()
+                        lr_c1, lr_c2 = st.columns([2, 1])
+                        with lr_c1:
+                            if st.button("Load Selected Resume", key="load_saved_res_act_btn", use_container_width=True):
+                                try:
+                                    stored_p = chosen_res.get("stored_path") or chosen_res.get("stored_relative_path")
+                                    if stored_p:
+                                        raw_bytes = storage.read_stored_file_bytes(stored_p)
+                                        extracted_cv, _ = parser.extract_text_from_file(raw_bytes, chosen_res["original_filename"])
+                                        if extracted_cv and extracted_cv.strip():
+                                            st.session_state.cv_text_val = extracted_cv
+                                            st.session_state.last_parsed_cv_name = chosen_res["original_filename"]
+                                            st.session_state.active_resume_file_id = chosen_res.get("file_id")
+                                            st.session_state.active_resume_file_path = stored_p
+                                            st.session_state.cv_file_size_kb = round(len(raw_bytes) / 1024, 1)
+
+                                            # CRUCIAL: Invalidate previous candidate's screening results to prevent data leakage
+                                            st.session_state.active_screening_record = None
+
+                                            # Extract metadata for newly loaded candidate
+                                            try:
+                                                cv_meta = parser.extract_candidate_metadata_hybrid(extracted_cv)
+                                            except Exception:
+                                                cv_meta = deterministic_engine.extract_candidate_metadata(extracted_cv) if hasattr(deterministic_engine, "extract_candidate_metadata") else {}
+                                            if not isinstance(cv_meta, dict):
+                                                cv_meta = {}
+                                            st.session_state.active_candidate_name = cv_meta.get("name") or chosen_res.get("candidate_name") or "Candidate"
+                                            st.session_state.active_candidate_id = chosen_res.get("candidate_id")
+                                            st.session_state.pending_candidate_meta = cv_meta
+
+                                            # Check if this candidate already has an existing screening for the active JD
+                                            cand_rec = registry.find_candidate_by_name(st.session_state.active_candidate_name)
+                                            if cand_rec and st.session_state.get("jd_text_val"):
+                                                c_screens = registry.get_candidate_screenings(cand_rec["candidate_id"])
+                                                match_sc = None
+                                                for sc in c_screens:
+                                                    if sc.get("job_description") and sc["job_description"].strip() == st.session_state.jd_text_val.strip():
+                                                        match_sc = sc
+                                                        break
+                                                if match_sc:
+                                                    ls = match_sc
+                                                    m_skills = json.loads(ls["matched_skills"]) if isinstance(ls["matched_skills"], str) else ls["matched_skills"]
+                                                    miss_skills = json.loads(ls["missing_skills"]) if isinstance(ls["missing_skills"], str) else ls["missing_skills"]
+                                                    ev = json.loads(ls["evidence"]) if isinstance(ls.get("evidence"), str) else ls.get("evidence", {})
+                                                    iq = json.loads(ls["interview_questions"]) if isinstance(ls.get("interview_questions"), str) else ls.get("interview_questions", [])
+                                                    det_res = {
+                                                        "match_score": ls["deterministic_score"],
+                                                        "skills_score": ls["skills_score"],
+                                                        "experience_score": ls["exp_score"],
+                                                        "certification_score": ls["cert_score"],
+                                                        "skills_matched": m_skills,
+                                                        "missing_skills": miss_skills,
+                                                        "supporting_evidence": ev,
+                                                        "interview_questions": iq,
+                                                        "verdict": ls["verdict"],
+                                                        "recommendation": ls["recommendation"],
+                                                        "total_experience_detected": cand_rec.get("total_experience", "3+ Years"),
+                                                    }
+                                                    st.session_state.active_screening_record = {
+                                                        "candidate_id": cand_rec["candidate_id"],
+                                                        "screening_id": ls["screening_id"],
+                                                        "meta": {
+                                                            "name": cand_rec["name"],
+                                                            "current_designation": cand_rec.get("current_designation", "Technical Specialist"),
+                                                            "organization": cand_rec.get("current_organization", "Cisco"),
+                                                            "total_exp": cand_rec.get("total_experience", "3+ Years"),
+                                                            "relevant_exp": cand_rec.get("relevant_experience", "~1+ Years"),
+                                                            "mobile": cand_rec.get("mobile", "+91 91457 *****"),
+                                                            "email": cand_rec.get("email", "candidate@fitment.ai"),
+                                                            "location": cand_rec.get("location", "Pune, India"),
+                                                            "education": cand_rec.get("education", "Bachelor of Engineering"),
+                                                            "previous_organizations": json.loads(cand_rec["previous_organizations"]) if isinstance(cand_rec.get("previous_organizations"), str) else cand_rec.get("previous_organizations", []),
+                                                            "certifications": json.loads(cand_rec["certifications"]) if isinstance(cand_rec.get("certifications"), str) else cand_rec.get("certifications", []),
+                                                        },
+                                                        "det_result": det_res,
+                                                        "skills_score": ls.get("skills_score", 32),
+                                                        "exp_score": ls.get("exp_score", 40),
+                                                        "cert_score": ls.get("cert_score", 0),
+                                                        "found_certs": [],
+                                                        "job_title": ls.get("job_title", "Target Role"),
+                                                        "ai_text": ls.get("llm_analysis", ""),
+                                                        "provider": ls.get("llm_provider", "InstantFit AI Screening Engine"),
+                                                        "model": ls.get("llm_model", "gemini-2.5-pro"),
+                                                    }
+
+                                            st.session_state.flash_cv_notification = ("success", f'Load CV "{chosen_res["original_filename"]}" successfully!')
+                                            st.session_state.show_load_cv_expander = False
+                                            st.rerun()
+                                        else:
+                                            st.error(f"Saved resume '{chosen_res['original_filename']}' contains no readable text.")
                                     else:
-                                        st.error(f"Saved resume '{chosen_res['original_filename']}' contains no readable text.")
+                                        st.error("Saved resume file path could not be resolved.")
+                                except Exception as err:
+                                    st.session_state.flash_cv_notification = ("error", f"Error loading Resume: {err}")
+                                    st.rerun()
+                        with lr_c2:
+                            if st.button("🗑️ Delete", key="del_saved_res_act_btn", help="Permanently delete this saved Resume from storage", use_container_width=True):
+                                ok = storage.delete_saved_resume(chosen_res["file_id"])
+                                if ok:
+                                    if st.session_state.get("active_resume_file_id") == chosen_res["file_id"]:
+                                        st.session_state.cv_text_val = ""
+                                        st.session_state.pop("last_parsed_cv_name", None)
+                                        st.session_state.pop("active_resume_file_id", None)
+                                        st.session_state.pop("active_candidate_id", None)
+                                        st.session_state.pop("active_candidate_name", None)
+                                        st.session_state.pop("pending_candidate_meta", None)
+                                        st.session_state.active_screening_record = None
+                                    st.session_state.flash_cv_notification = ("success", f'Deleted Resume "{chosen_res["original_filename"]}" from storage.')
+                                    st.session_state.show_load_cv_expander = False
+                                    st.rerun()
                                 else:
-                                    st.error("Saved resume file path could not be resolved.")
-                            except Exception as err:
-                                st.session_state.flash_cv_notification = ("error", f"Error loading Resume: {err}")
-                                st.rerun()
+                                    st.error("Could not delete saved Resume.")
                 else:
                     st.info("No saved candidate resumes found in registry storage.")
 
@@ -1759,16 +1997,21 @@ with col_workspace:
                     )
                 with chip2_c2:
                     st.markdown('<div class="trash-icon-btn">', unsafe_allow_html=True)
-                    if st.button("🗑️", key="remove_cv_btn", help="Clear current Candidate Resume", use_container_width=True):
+                    if st.button("🗑️", key="remove_cv_btn", help="Clear current Candidate Resume selection (preserves saved record)", use_container_width=True):
                         st.session_state.cv_text_val = ""
                         st.session_state.pop("last_parsed_cv_name", None)
+                        st.session_state.pop("active_resume_file_id", None)
+                        st.session_state.pop("active_candidate_id", None)
+                        st.session_state.pop("active_candidate_name", None)
+                        st.session_state.pop("pending_candidate_meta", None)
                         st.session_state.pop("cv_status", None)
                         st.session_state.active_screening_record = None
+                        st.session_state.flash_cv_notification = ("success", "Cleared Candidate Resume selection.")
                         st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
             else:
                 uploaded_cv = st.file_uploader(
-                    "Upload Candidate CV (.pdf, .docx, .txt)",
+                    "Upload Candidate CV (.pdf, .docx, .doc, .txt)",
                     type=["pdf", "docx", "doc", "txt"],
                     key="cv_file_upload",
                     label_visibility="collapsed",
@@ -1778,29 +2021,43 @@ with col_workspace:
                     if st.session_state.get("last_saved_cv_sig") != upload_sig_cv:
                         try:
                             raw_bytes = uploaded_cv.read()
-                            extracted_cv, _ = parser.extract_text_from_file(raw_bytes, uploaded_cv.name)
-                            cand_name = None
-                            if extracted_cv and extracted_cv.strip():
-                                p_meta = deterministic_engine.extract_candidate_metadata(extracted_cv)
-                                cand_name = p_meta.get("name")
-
-                            saved_cv_meta = storage.save_resume_file(raw_bytes, uploaded_cv.name, candidate_name=cand_name)
+                            is_val, v_err = storage.validate_file_upload(uploaded_cv.name, raw_bytes)
+                            if not is_val:
+                                st.session_state.flash_cv_notification = ("error", f"❌ {v_err}")
+                                st.rerun()
+                            saved_cv_meta = storage.save_resume_file(raw_bytes, uploaded_cv.name)
                             if saved_cv_meta.get("status") == "error":
-                                st.session_state.cv_status = ("error", f"❌ {saved_cv_meta.get('message', 'The candidate resume could not be saved.')}")
+                                st.session_state.flash_cv_notification = ("error", f"❌ {saved_cv_meta.get('message', 'The candidate resume could not be saved.')}")
+                                st.rerun()
                             else:
                                 st.session_state.active_resume_file_id = saved_cv_meta.get("file_id")
                                 st.session_state.active_resume_file_path = saved_cv_meta.get("stored_path") or saved_cv_meta.get("stored_relative_path")
                                 st.session_state.last_saved_cv_sig = upload_sig_cv
 
+                                extracted_cv, _ = parser.extract_text_from_file(raw_bytes, uploaded_cv.name)
                                 if extracted_cv and extracted_cv.strip():
                                     st.session_state.cv_text_val = extracted_cv
                                     st.session_state.last_parsed_cv_name = uploaded_cv.name
                                     st.session_state.cv_file_size_kb = round(len(raw_bytes) / 1024, 1)
-                                    st.session_state.cv_status = ("success", f"✅ Resume — {uploaded_cv.name} loaded successfully!")
+                                    # Invalidate old screening result
                                     st.session_state.active_screening_record = None
+                                    try:
+                                        cv_meta = parser.extract_candidate_metadata_hybrid(extracted_cv)
+                                    except Exception:
+                                        cv_meta = deterministic_engine.extract_candidate_metadata(extracted_cv) if hasattr(deterministic_engine, "extract_candidate_metadata") else {}
+                                    if not isinstance(cv_meta, dict):
+                                        cv_meta = {}
+                                    st.session_state.active_candidate_name = cv_meta.get("name") or "Candidate"
+                                    st.session_state.active_candidate_id = None
+                                    st.session_state.pending_candidate_meta = cv_meta
+                                    st.session_state.flash_cv_notification = ("success", f'Load CV "{uploaded_cv.name}" successfully!')
+                                    st.rerun()
+                                else:
+                                    st.session_state.flash_cv_notification = ("error", "❌ Uploaded resume contains no extractable text.")
                                     st.rerun()
                         except Exception as exc:
-                            st.session_state.cv_status = ("error", "❌ The candidate resume could not be loaded. Please try uploading it again.")
+                            st.session_state.flash_cv_notification = ("error", f"❌ The candidate resume could not be loaded: {exc}")
+                            st.rerun()
 
             # Expandable Resume Preview
             with st.expander("📄 Preview Extracted Resume Text", expanded=False):
@@ -1950,6 +2207,10 @@ with col_workspace:
                 }
                 st.session_state.active_candidate_id = cand_id
                 st.session_state.active_candidate_name = meta["name"]
+                if trigger_offline:
+                    st.success("✅ Instant Offline Screening complete! Authoritative deterministic evaluation calculated.")
+                elif trigger_ai:
+                    st.success("✅ InstantFit AI Screening complete! Authoritative evaluation and qualitative insights generated.")
 
         # --- DISPLAY SCREENING RESULTS (PHASE 1 - ITEMS 5 & 6) ---
         active_rec = st.session_state.active_screening_record
@@ -1973,9 +2234,10 @@ with col_workspace:
                 mobile_val = '+91 91457 37256'
 
             # 5. CANDIDATE SUMMARY CARD (PIXEL-FAITHFUL TO SCREENSHOT B)
-            cand_summary_html = f"""
-            <div class="candidate-summary-card-target">
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #E2E8F0; padding-bottom: 12px; margin-bottom: 16px;">
+            st.markdown('<div class="candidate-summary-card-target">', unsafe_allow_html=True)
+            cs_col1, cs_col2 = st.columns([0.76, 0.24], vertical_alignment="center")
+            with cs_col1:
+                render_html("""
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 18px; color: #2164F3;">📄</span>
                         <div>
@@ -1983,13 +2245,13 @@ with col_workspace:
                             <p style="margin: 2px 0 0 0; color: #64748B; font-size: 12px;">Key information extracted from the resume. Update recruitment status as per your process.</p>
                         </div>
                     </div>
-                    <div>
-                        <span style="font-size: 12px; font-weight: 700; color: #2164F3; background: #EFF6FF; border: 1px solid #BFDBFE; padding: 5px 12px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px;">
-                            <span>👤</span> View Full Profile
-                        </span>
-                    </div>
-                </div>
-                
+                """)
+            with cs_col2:
+                if st.button("👤 View Full Profile", key="btn_view_full_profile", help="View comprehensive candidate profile & dossier", use_container_width=True):
+                    show_full_candidate_profile_dialog(active_rec)
+
+            cand_summary_html = f"""
+                <div style="border-top: 1px solid #E2E8F0; margin-top: 12px; margin-bottom: 16px;"></div>
                 <div style="display: flex; gap: 20px; align-items: center;">
                     <div class="candidate-avatar-large">
                         {get_initials(meta['name'])}
@@ -2058,9 +2320,10 @@ with col_workspace:
             render_html(cand_summary_html)
 
             # 6. FITMENT RESULTS SECTION (MATCHING SCREENSHOT B)
-            fitment_header_html = """
-            <div class="fitment-results-card-target" style="margin-top: 14px; margin-bottom: 14px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #E2E8F0; padding-bottom: 12px; margin-bottom: 16px;">
+            st.markdown('<div class="fitment-results-card-target" style="margin-top: 14px; margin-bottom: 14px;">', unsafe_allow_html=True)
+            fr_col1, fr_col2 = st.columns([0.74, 0.26], vertical_alignment="center")
+            with fr_col1:
+                render_html("""
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 18px; color: #2164F3;">📊</span>
                         <div>
@@ -2068,15 +2331,12 @@ with col_workspace:
                             <p style="margin: 2px 0 0 0; color: #64748B; font-size: 12px;">AI-powered analysis based on job requirements and candidate profile.</p>
                         </div>
                     </div>
-                    <div>
-                        <span style="font-size: 12px; font-weight: 700; color: #2164F3; background: #EFF6FF; border: 1px solid #BFDBFE; padding: 5px 12px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px;">
-                            <span>📊</span> View Detailed Analysis
-                        </span>
-                    </div>
-                </div>
-            </div>
-            """
-            render_html(fitment_header_html)
+                """)
+            with fr_col2:
+                if st.button("📊 View Detailed Analysis", key="btn_view_detailed_analysis", help="Toggle detailed competency breakdown & interview strategy", use_container_width=True):
+                    st.session_state["expand_detailed_analysis"] = not st.session_state.get("expand_detailed_analysis", False)
+                    st.rerun()
+            st.markdown('<div style="border-top: 1px solid #E2E8F0; margin-top: 12px; margin-bottom: 16px;"></div></div>', unsafe_allow_html=True)
 
             # 4 Metric Cards (Matching Screenshot B with horizontal donut/icon layout)
             m1, m2, m3, m4 = st.columns(4, gap="small")
@@ -2272,7 +2532,7 @@ with col_workspace:
 
             # Detailed report tabs for deeper inspection & dossier download
             st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-            with st.expander("📊 Detailed Competency Breakdown, Interview Strategy & Dossier Export", expanded=False):
+            with st.expander("📊 Detailed Competency Breakdown, Interview Strategy & Dossier Export", expanded=st.session_state.get("expand_detailed_analysis", False)):
                 sub_tab_status, sub_tab_dossier, sub_tab_ai, sub_tab_sum, sub_tab_skills, sub_tab_exp, sub_tab_questions, sub_tab_export = st.tabs(
                     [
                         "📝 Candidate Lifecycle & Notes",
@@ -2482,6 +2742,100 @@ with col_workspace:
                         file_name=f"Recruitment_Intelligence_{clean_name}_Dossier.md",
                         mime="text/markdown",
                     )
+        elif st.session_state.get("cv_text_val", "").strip():
+            # A candidate resume is loaded, but not screened yet against current JD
+            meta = st.session_state.get("pending_candidate_meta")
+            if not meta:
+                try:
+                    meta = parser.extract_candidate_metadata_hybrid(st.session_state.cv_text_val)
+                except Exception:
+                    meta = deterministic_engine.extract_candidate_metadata(st.session_state.cv_text_val) if hasattr(deterministic_engine, "extract_candidate_metadata") else {}
+            if not isinstance(meta, dict):
+                meta = {}
+            cand_name = meta.get("name", "Candidate Pending Verification")
+            current_desig = meta.get("current_designation", "Not Detected")
+            current_org = meta.get("organization", "Not Detected")
+            tot_exp = meta.get("total_exp", "Not Detected")
+            first_jd_line = [l.strip() for l in st.session_state.get("jd_text_val", "").splitlines() if l.strip()]
+            target_role = first_jd_line[0][:60] if first_jd_line else "Target Technical Role"
+            raw_mob = meta.get("mobile", "+91 91457 *****")
+            masked_mob = re.sub(r'(\+?\d{2,4}\s?\d{2,3})\d{4,5}', r'\1*****', raw_mob) if raw_mob else '+91 91457 *****'
+
+            st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
+            st.markdown('<div class="candidate-summary-card-target">', unsafe_allow_html=True)
+            cs_col1, cs_col2 = st.columns([0.76, 0.24], vertical_alignment="center")
+            with cs_col1:
+                render_html("""
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 18px; color: #2164F3;">📄</span>
+                        <div>
+                            <h3 style="margin: 0; color: #10234E; font-size: 16.5px; font-weight: 800; letter-spacing: -0.2px;">Candidate Summary</h3>
+                            <p style="margin: 2px 0 0 0; color: #64748B; font-size: 12px;">Candidate profile loaded from active resume. Ready for screening.</p>
+                        </div>
+                    </div>
+                """)
+            with cs_col2:
+                st.markdown('<span style="font-size: 11.5px; font-weight: 700; color: #EA580C; background: #FEF3C7; border: 1px solid #FCD34D; padding: 4px 10px; border-radius: 6px;">⚡ Ready to Screen</span>', unsafe_allow_html=True)
+
+            cand_pending_html = f"""
+                <div style="border-top: 1px solid #E2E8F0; margin-top: 12px; margin-bottom: 16px;"></div>
+                <div style="display: flex; gap: 20px; align-items: center;">
+                    <div class="candidate-avatar-large">
+                        {get_initials(cand_name)}
+                        <div class="avatar-check-badge" style="background: #EA580C;">!</div>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 18px;">
+                            <div>
+                                <div style="color: #64748B; font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin-bottom: 3px;">👤 CANDIDATE NAME</div>
+                                <div style="color: #10234E; font-size: 14px; font-weight: 800;">{html.escape(cand_name)}</div>
+                            </div>
+                            <div>
+                                <div style="color: #64748B; font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin-bottom: 3px;">💼 CURRENT DESIGNATION</div>
+                                <div style="color: #10234E; font-size: 14px; font-weight: 800;">{html.escape(current_desig)}</div>
+                            </div>
+                            <div>
+                                <div style="color: #64748B; font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin-bottom: 3px;">🏢 CURRENT ORGANIZATION</div>
+                                <div style="color: #10234E; font-size: 14px; font-weight: 800;">{html.escape(current_org)}</div>
+                            </div>
+                            <div>
+                                <div style="color: #64748B; font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin-bottom: 3px;">⏱️ TOTAL EXPERIENCE</div>
+                                <div style="color: #10234E; font-size: 14px; font-weight: 800;">{html.escape(tot_exp)}</div>
+                            </div>
+                            <div>
+                                <div style="color: #64748B; font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin-bottom: 3px;">🎯 TARGET ROLE</div>
+                                <div style="color: #10234E; font-size: 14px; font-weight: 800;">{html.escape(target_role)}</div>
+                            </div>
+                            <div>
+                                <div style="color: #64748B; font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin-bottom: 3px;">📊 FITMENT SCORE</div>
+                                <div><strong style="color: #64748B; font-size: 14px; font-weight: 700;">— / 100</strong> <span style="color: #EA580C; font-weight: 600; font-size: 11.5px;">(Pending)</span></div>
+                            </div>
+                            <div>
+                                <div style="color: #64748B; font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin-bottom: 3px;">📁 RECRUITMENT STATUS</div>
+                                <div><span style="background: #EFF6FF; color: #2164F3; border: 1px solid #BFDBFE; padding: 2px 8px; border-radius: 6px; font-weight: 700; font-size: 12px;">New Application</span></div>
+                            </div>
+                            <div>
+                                <div style="color: #64748B; font-size: 10.5px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin-bottom: 3px;">📞 MOBILE NUMBER</div>
+                                <div style="color: #10234E; font-size: 13.5px; font-weight: 700;">{html.escape(masked_mob)}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """
+            render_html(cand_pending_html)
+
+            # Fitment Results Waiting Card
+            st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
+            render_html(
+                f"""
+                <div class="fitment-results-card-target" style="text-align: center; padding: 28px 20px;">
+                    <span style="font-size: 32px; display: block; margin-bottom: 8px;">🚀</span>
+                    <h4 style="margin: 0 0 6px 0; color: #10234E; font-size: 16.5px; font-weight: 700;">Ready for Screening: {html.escape(cand_name)}</h4>
+                    <p style="margin: 0; color: #64748B; font-size: 13px;">Click <strong>Run InstantFit AI Screening</strong> or <strong>Run Instant Offline Screening</strong> above to evaluate candidate competencies and compute fitment metrics against target JD.</p>
+                </div>
+                """
+            )
         else:
             # Polished empty states matching design tokens
             st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
@@ -2966,6 +3320,7 @@ with col_chat:
         st.markdown("<span style='font-size: 14px; font-weight: 800; color: #10234E;'>🕒 Recently Viewed Candidates</span>", unsafe_allow_html=True)
     with rc_btn_col:
         if st.button("View All ➔", key="rc_view_all_action_btn", help="Open complete candidate directory", use_container_width=True):
+            st.session_state.sidebar_nav_radio = "📋 Candidate Tracker"
             st.session_state.selected_nav = "📋 Candidate Tracker"
             st.rerun()
 
@@ -3005,6 +3360,12 @@ with col_chat:
                     st.session_state.active_candidate_id = rc["candidate_id"]
                     st.session_state.active_candidate_name = rc["name"]
                     c_screens = registry.get_candidate_screenings(rc["candidate_id"])
+                    cand_full = registry.get_candidate_by_id(rc["candidate_id"]) or rc
+                    if cand_full.get("resume_reference"):
+                        st.session_state.last_parsed_cv_name = cand_full["resume_reference"]
+                    else:
+                        st.session_state.last_parsed_cv_name = f"{cand_full['name']}_CV.pdf"
+
                     if c_screens:
                         ls = c_screens[0]
                         m_skills = json.loads(ls["matched_skills"]) if isinstance(ls["matched_skills"], str) else ls["matched_skills"]
@@ -3025,7 +3386,8 @@ with col_chat:
                             "recommendation": ls["recommendation"],
                             "total_experience_detected": rc.get("total_experience", "3+ Years"),
                         }
-                        cand_full = registry.get_candidate_by_id(rc["candidate_id"]) or rc
+                        raw_mob = cand_full.get("mobile", "+91 91457 *****")
+                        masked_mob = re.sub(r'(\+?\d{2,4}\s?\d{2,3})\d{4,5}', r'\1*****', raw_mob) if raw_mob else '+91 91457 *****'
                         st.session_state.active_screening_record = {
                             "candidate_id": rc["candidate_id"],
                             "screening_id": ls["screening_id"],
@@ -3035,7 +3397,7 @@ with col_chat:
                                 "organization": cand_full.get("current_organization", "Cisco"),
                                 "total_exp": cand_full.get("total_experience", "3+ Years"),
                                 "relevant_exp": cand_full.get("relevant_experience", "~1+ Years"),
-                                "mobile": cand_full.get("mobile", "+91 91457 37256"),
+                                "mobile": masked_mob,
                                 "email": cand_full.get("email", "candidate@fitment.ai"),
                                 "location": cand_full.get("location", "Pune, India"),
                                 "education": cand_full.get("education", "Bachelor of Engineering"),
