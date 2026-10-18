@@ -1116,7 +1116,13 @@ with col_workspace:
                     st.error(st_msg)
 
             # Compact Candidate Summary Grid beneath resume panel
+            preview_meta = {}
             if st.session_state.cv_text_val.strip():
+                try:
+                    preview_meta = deterministic_engine.extract_candidate_metadata(st.session_state.cv_text_val) or {}
+                except Exception:
+                    preview_meta = {}
+
                 cand_name_preview = preview_meta.get("name") if preview_meta else None
                 existing_cand = registry.find_candidate_by_name(cand_name_preview) if cand_name_preview else None
                 prev_status = existing_cand.get("current_status", "New") if existing_cand else "New"
@@ -1130,11 +1136,11 @@ with col_workspace:
                     <div class="candidate-summary-grid">
                         <div class="candidate-grid-item">
                             <span class="candidate-grid-label">Candidate Name</span>
-                            <span class="candidate-grid-value">👤 {html.escape(preview_meta['name'] or 'Not Detected')}</span>
+                            <span class="candidate-grid-value">👤 {html.escape(preview_meta.get('name') or 'Not Detected')}</span>
                         </div>
                         <div class="candidate-grid-item">
                             <span class="candidate-grid-label">Current Designation</span>
-                            <span class="candidate-grid-value">💼 {html.escape(preview_meta['current_designation'] or 'Not Detected')}</span>
+                            <span class="candidate-grid-value">💼 {html.escape(preview_meta.get('current_designation') or 'Not Detected')}</span>
                         </div>
                         <div class="candidate-grid-item">
                             <span class="candidate-grid-label">Current Organization</span>
@@ -1142,11 +1148,11 @@ with col_workspace:
                         </div>
                         <div class="candidate-grid-item">
                             <span class="candidate-grid-label">Mobile Number</span>
-                            <span class="candidate-grid-value">📱 {html.escape(preview_meta['mobile'] or 'Not available')}</span>
+                            <span class="candidate-grid-value">📱 {html.escape(preview_meta.get('mobile') or 'Not available')}</span>
                         </div>
                         <div class="candidate-grid-item">
                             <span class="candidate-grid-label">Total Experience</span>
-                            <span class="candidate-grid-value">⏳ {html.escape(preview_meta['total_exp'] or 'Not Detected')}</span>
+                            <span class="candidate-grid-value">⏳ {html.escape(preview_meta.get('total_exp') or 'Not Detected')}</span>
                         </div>
                         <div class="candidate-grid-item">
                             <span class="candidate-grid-label">Target Role</span>

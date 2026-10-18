@@ -282,5 +282,60 @@ class TestUploadPersistenceRegression(unittest.TestCase):
         self.assertIsNone(registry.find_candidate_by_name(None, db_path=self.db_path))
 
 
+    # 15. preview_meta lifecycle, candidate context isolation, and safe fallback
+    def test_15_preview_meta_lifecycle_and_candidate_context(self):
+        # Case A: Metadata exists and includes a name
+        cv_text_1 = "Candidate Name: Rohan Mehra\nEmail: rohan@corp.com\nDesignation: Voice Specialist\nOrganization: Avaya"
+        meta_1 = deterministic_engine.extract_candidate_metadata(cv_text_1) or {}
+        self.assertEqual(meta_1.get("name"), "Rohan Mehra")
+        self.assertEqual(meta_1.get("current_designation"), "Voice Specialist")
+
+        # Case B: Metadata is empty or None
+        empty_meta = {}
+        self.assertIsNone(empty_meta.get("name"))
+        self.assertEqual(empty_meta.get("name") or "Not Detected", "Not Detected")
+        self.assertEqual(empty_meta.get("current_designation") or "Not Detected", "Not Detected")
+
+        # Case C: Name field is missing
+        missing_name_meta = {"email": "anonymous@test.com", "total_exp": "5 Years"}
+        self.assertIsNone(missing_name_meta.get("name"))
+        self.assertEqual(missing_name_meta.get("name") or "Not Detected", "Not Detected")
+        self.assertEqual(missing_name_meta.get("total_exp") or "Not Detected", "5 Years")
+
+        # Case D: Candidate context switching - new candidate replaces previous
+        cid_1 = registry.upsert_candidate(name="Rohan Mehra", email="rohan@corp.com", db_path=self.db_path)
+        cand_1 = registry.find_candidate_by_name(meta_1.get("name"), db_path=self.db_path)
+        self.assertIsNotNone(cand_1)
+        self.assertEqual(cand_1["name"], "Rohan Mehra")
+
+        # Now load a different candidate
+        cv_text_2 = "Candidate Name: Sunita Rao\nEmail: sunita@telecom.org\nDesignation: Senior Network Engineer"
+        meta_2 = deterministic_engine.extract_candidate_metadata(cv_text_2) or {}
+        cid_2 = registry.upsert_candidate(name="Sunita Rao", email="sunita@telecom.org", db_path=self.db_path)
+        cand_2 = registry.find_candidate_by_name(meta_2.get("name"), db_path=self.db_path)
+        self.assertIsNotNone(cand_2)
+        self.assertEqual(cand_2["name"], "Sunita Rao")
+        # Ensure context did not leak Rohan Mehra
+        self.assertNotEqual(cand_2["name"], cand_1["name"])
+        self.assertNotEqual(cand_2["candidate_id"], cand_1["candidate_id"])
+
+        # Case E: Saved resume reloaded preserves exact candidate metadata
+        res_meta = storage.save_resume_file(
+            file_bytes=cv_text_2.encode("utf-8"),
+            original_filename="Sunita_Resume.txt",
+            candidate_name="Sunita Rao",
+            candidate_id=cid_2,
+            base_dir=self.test_dir,
+            db_path=self.db_path,
+        )
+        saved_list = storage.list_saved_resumes(base_dir=self.test_dir, db_path=self.db_path)
+        chosen = next(r for r in saved_list if r["file_id"] == res_meta["file_id"])
+        self.assertEqual(chosen["candidate_name"], "Sunita Rao")
+        read_bytes = storage.read_stored_file_bytes(chosen, base_dir=self.test_dir)
+        re_text, _ = parser.extract_text_from_file(read_bytes, chosen["original_filename"])
+        re_meta = deterministic_engine.extract_candidate_metadata(re_text) or {}
+        self.assertEqual(re_meta.get("name"), "Sunita Rao")
+
+
 if __name__ == "__main__":
     unittest.main()
