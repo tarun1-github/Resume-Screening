@@ -33,6 +33,11 @@ STOP_WORDS_FOR_NAMES = {
     "fitment", "dossier", "profile", "details", "contact", "organization", "company",
     "designation", "analyst", "consultant", "architect", "lead", "senior", "junior",
     "who", "why", "how", "can", "you", "does", "work", "scored", "scores",
+    "flow", "call", "calls", "sip", "mgcp", "cucm", "voip", "routing", "trunk",
+    "gateway", "setup", "telephony", "protocol", "packet", "script", "python",
+    "powershell", "decorator", "decorators", "rag", "agent", "agents", "code",
+    "email", "plan", "summary", "concept", "troubleshoot", "troubleshooting",
+    "explain", "draft", "write", "compare", "between", "difference",
 }
 
 
@@ -62,8 +67,9 @@ def extract_explicit_candidate_search_terms(query: str) -> List[str]:
 
     # 3. Prepositional phrases (e.g. "of Tarun", "for Shubhangi", "about Prachi", "of Alex")
     prep_patterns = [
-        r"\b(?:of|for|about|on|with|named|regarding)\s+([A-Za-z]{3,}(?:\s+[A-Za-z]{3,})?)\b",
-        r"\b(?:check|inspect|verify|call|contact|view)\s+([A-Za-z]{3,}(?:\s+[A-Za-z]{3,})?)\b",
+        r"\b(?:of|for|about|named|regarding)\s+([A-Za-z]{3,}(?:\s+[A-Za-z]{3,})?)\b",
+        r"\b(?:check|inspect|verify|view)\s+([A-Za-z]{3,}(?:\s+[A-Za-z]{3,})?)\b",
+        r"\b(?:call|contact)\s+(?:candidate\s+)?([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\b",
     ]
     for pat in prep_patterns:
         for match in re.findall(pat, query, re.IGNORECASE):
@@ -172,10 +178,22 @@ def resolve_candidate_for_query(
 
     # CASE C: No explicit candidate was named in the query.
     # Check for pronoun or contextual reference to the selected candidate.
-    context_cues = ["he", "she", "her", "his", "him", "they", "them", "the candidate", "this candidate", "selected candidate", "current candidate"]
+    context_cues = ["he", "she", "her", "his", "him", "they", "them", "the candidate", "this candidate", "selected candidate", "current candidate", "this profile"]
     has_context_cue = any(re.search(rf"\b{re.escape(cue)}\b", q_lower) for cue in context_cues)
 
-    if selected_candidate_id:
+    # General technical terms that indicate Mode B unless a candidate is explicitly referenced
+    general_tech_terms = [
+        "explain", "how to", "what is", "difference between", "help write",
+        "script", "decorators", "rag", "ai agents", "sip", "cucm", "mgcp",
+        "powershell", "python", "email", "interview plan", "architecture",
+        "summarize", "guide", "tutorial"
+    ]
+    is_general_inquiry = any(re.search(rf"\b{re.escape(term)}\b", q_lower) for term in general_tech_terms)
+
+    cand_attribute_cues = ["score", "fitment", "mobile", "phone", "contact", "email", "status", "gaps", "skills", "experience", "designation", "resume", "cv", "profile", "interview questions", "probes"]
+    has_attribute_cue = any(re.search(rf"\b{re.escape(cue)}\b", q_lower) for cue in cand_attribute_cues)
+
+    if selected_candidate_id and (has_context_cue or (has_attribute_cue and not is_general_inquiry)):
         cand = registry.get_candidate_by_id(selected_candidate_id, db_path)
         if cand:
             return cand, None, []
@@ -186,7 +204,7 @@ def resolve_candidate_for_query(
         cursor.execute("SELECT * FROM candidates")
         all_cands = [dict(r) for r in cursor.fetchall()]
 
-    if len(all_cands) == 1 and (has_context_cue or any(w in q_lower for w in ["score", "fitment", "designation", "mobile", "status", "screening", "questions"])):
+    if len(all_cands) == 1 and (has_context_cue or (has_attribute_cue and not is_general_inquiry)):
         return all_cands[0], None, []
 
     return None, None, []
@@ -267,10 +285,18 @@ class FitmentAssistant:
     """
     Authoritative, portal-wide database-grounded recruitment intelligence assistant.
     Queries all candidate records, screenings, and follow-ups in the FITMENT.AI registry.
+    Supports general-purpose AI copilot queries (Mode B) routed to configured LLMs.
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        preferred_provider: Optional[str] = None,
+        preferred_model: Optional[str] = None,
+    ):
         self.db_path = db_path
+        self.preferred_provider = preferred_provider
+        self.preferred_model = preferred_model
         registry.init_db(self.db_path)
 
     def get_registered_candidate_names(self) -> List[str]:
@@ -279,12 +305,34 @@ class FitmentAssistant:
             cursor.execute("SELECT name FROM candidates ORDER BY updated_at DESC")
             return [r["name"] for r in cursor.fetchall()]
 
-    def ask(self, user_query: str, selected_candidate_id: Optional[str] = None) -> Dict[str, Any]:
+    def ask(
+        self,
+        user_query: str,
+        selected_candidate_id: Optional[str] = None,
+        preferred_provider: Optional[str] = None,
+        preferred_model: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
         """
         Parses intent, resolves candidate across complete registry, and returns structured responses.
+        Mode A: Grounded recruitment intelligence (candidates, scores, follow-ups, comparisons).
+        Mode B: General-purpose AI copilot (technical concepts, code, interview plans, email drafting).
         """
         q = user_query.strip()
         q_lower = q.lower()
+        active_p = preferred_provider or self.preferred_provider
+        active_m = preferred_model or self.preferred_model
+
+        # 0. SECURITY & SECRETS PROTECTION
+        secrets_pattern = r"\b(?:api[_\s-]?keys?|secrets?|environment\s+variables?|env\s+vars?|database_url|passwords?)\b"
+        if re.search(r"\b(?:show|reveal|display|print|expose|leak|dump|view|give|tell)\b", q_lower) and re.search(secrets_pattern, q_lower):
+            return {
+                "answer": (
+                    "🔒 **Security Protection Notice:** System environment variables, API credentials, and internal secret tokens "
+                    "are strictly protected and cannot be displayed or exposed under any circumstances."
+                ),
+                "needs_disambiguation": False,
+            }
 
         # ----------------------------------------------------------------------
         # 1. CANDIDATE STATUS UPDATE / TRANSITION INTENT
@@ -353,12 +401,14 @@ class FitmentAssistant:
         # 2. GLOBAL PORTAL & MULTI-CANDIDATE QUERIES (Evaluated when query is broad)
         # ----------------------------------------------------------------------
 
-        # 2A: Follow-ups due / pending / overdue / tomorrow
-        if any(w in q_lower for w in ["follow-up", "follow up", "followups", "follow-ups", "due today", "overdue", "tomorrow"]):
+        # 2A: Follow-ups due / pending / overdue / tomorrow / Bharat's list
+        if any(w in q_lower for w in ["follow-up", "follow up", "followups", "follow-ups", "due today", "overdue", "tomorrow", "followup list", "follow-up list"]) or ("bharat" in q_lower and "list" in q_lower):
             overview = registry.get_follow_ups_overview(self.db_path)
             due_today = overview["due_today"]
             overdue = overview["overdue"]
             upcoming = overview["upcoming"]
+
+            header_title = "### 📅 Recruiter Bharat Raparthy — Candidate Follow-Up Pipeline\n" if "bharat" in q_lower else "### 📅 Candidate Follow-Up Status\n"
 
             if "tomorrow" in q_lower:
                 tomorrow_str = (date.today() + timedelta(days=1)).isoformat()
@@ -370,7 +420,7 @@ class FitmentAssistant:
                     ans_lines.append(f"- **{f['candidate_name']}** (Role: {f.get('current_designation', 'N/A')}) — Note: *{f.get('notes') or 'Follow-up'}*")
                 return {"answer": "\n".join(ans_lines), "needs_disambiguation": False}
 
-            ans_lines = ["### 📅 Candidate Follow-Up Status\n"]
+            ans_lines = [header_title]
             if overdue:
                 ans_lines.append(f"**⚠️ Overdue Follow-ups ({len(overdue)}):**")
                 for f in overdue:
@@ -391,6 +441,76 @@ class FitmentAssistant:
                     ans_lines.append(f"- **{f['candidate_name']}** on `{f['follow_up_date']}`")
 
             return {"answer": "\n".join(ans_lines).strip(), "needs_disambiguation": False}
+
+        # 2A.1: Candidates with specific skill / company / technology experience
+        # e.g., "Find candidates with Cisco experience", "Candidates with Python experience"
+        exp_match = re.search(r'(?:find|show|list|search|which|get)\s+candidates\s+(?:with|having)\s+([a-zA-Z0-9_\-+#. ]+?)\s+(?:experience|skills|background)', q_lower)
+        if not exp_match:
+            exp_match = re.search(r'candidates\s+(?:with|having)\s+([a-zA-Z0-9_\-+#. ]+?)\s+experience', q_lower)
+        if exp_match:
+            exp_term = exp_match.group(1).strip()
+            cands = registry.search_candidates_portal_wide(query_term=exp_term, db_path=self.db_path)
+            if not cands:
+                return {
+                    "answer": f"ℹ️ No candidates found in the registry with **{exp_term}** experience.",
+                    "needs_disambiguation": False,
+                }
+            ans_lines = [f"### 💼 Candidates with `{exp_term.title()}` Experience ({len(cands)})\n"]
+            for c in cands:
+                score_str = f"Score: **{c['deterministic_score']}/100**" if c.get("deterministic_score") is not None else "Not yet screened"
+                role_str = c.get("job_title") or c.get("current_designation") or "N/A"
+                org_str = c.get("current_organization") or "Not Specified"
+                ans_lines.append(f"- **{c['name']}** — {role_str} (*{org_str}*) | {score_str} | Status: `{c.get('current_status', 'Screened')}`")
+            return {"answer": "\n".join(ans_lines), "needs_disambiguation": False}
+
+        # 2A.2: Candidate Comparison
+        # e.g. "Compare two candidates for Voice T2", "Compare Tarun and Shubhangi"
+        if "compare" in q_lower:
+            role_cmp = re.search(r'compare\s+(?:two\s+)?candidates\s+for\s+([^?.,]+)', q, re.IGNORECASE)
+            if role_cmp:
+                r_target = role_cmp.group(1).strip()
+                cands = registry.get_candidates_screened_for_role(r_target, self.db_path)
+                if len(cands) >= 2:
+                    display_role = cands[0].get("job_title") or r_target
+                    ans_lines = [
+                        f"### ⚖️ Candidate Comparison for `{display_role}`\n",
+                        "| Candidate Name | Score | Verdict | Status | Experience | Current Org |",
+                        "|---|---|---|---|---|---|",
+                    ]
+                    for c in cands:
+                        score_val = f"**{c.get('deterministic_score', 'N/A')}/100**"
+                        ans_lines.append(
+                            f"| **{c['name']}** | {score_val} | {c.get('verdict', 'N/A')} | `{c.get('current_status', 'Screened')}` | {c.get('total_experience', 'N/A')} | {c.get('current_organization', 'N/A')} |"
+                        )
+                    return {"answer": "\n".join(ans_lines), "needs_disambiguation": False}
+                elif len(cands) == 1:
+                    return {"answer": f"ℹ️ Only one candidate (**{cands[0]['name']}**) has been screened for `{r_target}` in the registry.", "needs_disambiguation": False}
+                else:
+                    return {"answer": f"ℹ️ No candidates have been screened for `{r_target}` in the registry.", "needs_disambiguation": False}
+
+            # Check if 2 candidates are explicitly named
+            all_c_names = self.get_registered_candidate_names()
+            found_cands = [name for name in all_c_names if name.split()[0].lower() in q_lower]
+            if len(found_cands) >= 2:
+                c1 = registry.find_candidate_by_name(found_cands[0], self.db_path)
+                c2 = registry.find_candidate_by_name(found_cands[1], self.db_path)
+                if c1 and c2:
+                    sc1 = registry.get_candidate_screenings(c1["candidate_id"], self.db_path)
+                    sc2 = registry.get_candidate_screenings(c2["candidate_id"], self.db_path)
+                    s1 = sc1[0] if sc1 else {}
+                    s2 = sc2[0] if sc2 else {}
+                    ans_lines = [
+                        f"### ⚖️ Candidate Comparison: **{c1['name']}** vs **{c2['name']}**\n",
+                        f"| Dimension | **{c1['name']}** | **{c2['name']}** |",
+                        "|---|---|---|",
+                        f"| **Current Designation** | {c1.get('current_designation', 'N/A')} | {c2.get('current_designation', 'N/A')} |",
+                        f"| **Current Organization** | {c1.get('current_organization', 'N/A')} | {c2.get('current_organization', 'N/A')} |",
+                        f"| **Total Experience** | {c1.get('total_experience', 'N/A')} | {c2.get('total_experience', 'N/A')} |",
+                        f"| **Fitment Score** | **{s1.get('deterministic_score', 'N/A')}/100** | **{s2.get('deterministic_score', 'N/A')}/100** |",
+                        f"| **Screening Verdict** | {s1.get('verdict', 'N/A')} | {s2.get('verdict', 'N/A')} |",
+                        f"| **Recruitment Status** | `{c1.get('current_status', 'Screened')}` | `{c2.get('current_status', 'Screened')}` |",
+                    ]
+                    return {"answer": "\n".join(ans_lines), "needs_disambiguation": False}
 
         # 2B: Which candidates were screened for a specific role?
         # e.g., "Which candidates were screened for Voice T2?", "Who was screened for Cisco Network Voice"
@@ -454,8 +574,7 @@ class FitmentAssistant:
                     ans_lines.append(f"- **{c['name']}** | {role_str} | {score_str} | Mobile: `{c.get('mobile', 'Not available in CV')}`")
                 return {"answer": "\n".join(ans_lines), "needs_disambiguation": False}
 
-
-        # 2E: Score threshold queries (e.g., 'scores above 70', 'fitment > 60')
+        # 2F: Score threshold queries (e.g., 'scores above 70', 'fitment > 60')
         score_thresh_match = re.search(r'(?:above|greater\s+than|over|higher\s+than|>)\s*(\d{1,3})', q_lower)
         if score_thresh_match and any(w in q_lower for w in ["score", "fitment", "candidate", "which"]):
             threshold = int(score_thresh_match.group(1))
@@ -486,20 +605,46 @@ class FitmentAssistant:
             }
 
         if not cand_record:
-            return {
-                "answer": (
-                    "👋 I can answer questions across all candidates, screening records, and follow-ups in the FITMENT.AI database.\n\n"
-                    "**Try asking:**\n"
-                    "- *What is Tarun's mobile number?*\n"
-                    "- *What is Shubhangi's latest fitment score?*\n"
-                    "- *Show all roles for which Shubhangi has been screened.*\n"
-                    "- *What was Prachi's score for the previous job?*\n"
-                    "- *Which candidates were screened for Voice T2?*\n"
-                    "- *Show shortlisted candidates.*\n"
-                    "- *Which follow-ups are overdue?*"
-                ),
-                "needs_disambiguation": False,
-            }
+            # Check for Ambiguous query between candidate database and general technical guidance
+            ambiguous_keywords = [
+                "status", "check status", "score", "fitment score",
+                "interview questions", "check candidate", "candidate details",
+                "view profile", "check profile", "review candidate", "screening results"
+            ]
+            if q_lower in ambiguous_keywords or (len(q_lower.split()) <= 2 and any(k == q_lower for k in ambiguous_keywords)):
+                return {
+                    "answer": (
+                        "🤔 **Clarification:** Would you like me to look up candidate screening records from the recruitment database, "
+                        "or provide general technical guidance on this topic?\n\n"
+                        "- **To inspect candidate records:** Mention the candidate's name (e.g. *What is Shubhangi's score?*) or select a candidate from the dashboard.\n"
+                        "- **For general assistance:** Ask any technical question (e.g. *Explain SIP call flow* or *Explain Python decorators*)!"
+                    ),
+                    "needs_disambiguation": False,
+                }
+
+            # Mode B: General AI Assistant Query (Routed to configured LLM)
+            gen_res = llm_manager.generate_general_assistant_response(
+                user_query=q,
+                conversation_history=conversation_history,
+                preferred_provider=active_p,
+                preferred_model=active_m,
+            )
+            if gen_res.get("status") == "success":
+                return {
+                    "answer": gen_res["text"],
+                    "needs_disambiguation": False,
+                    "provider": gen_res.get("provider"),
+                    "model": gen_res.get("model"),
+                }
+            else:
+                return {
+                    "answer": gen_res.get("message") or (
+                        "⚠️ The general AI assistant service is currently unavailable. "
+                        "Please verify that an active AI provider (Gemini, OpenRouter, or NVIDIA NIM) "
+                        "is configured and connected in Settings or `.env`."
+                    ),
+                    "needs_disambiguation": False,
+                }
 
         cid = cand_record["candidate_id"]
         screenings = registry.get_candidate_screenings(cid, self.db_path)

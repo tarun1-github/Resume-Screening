@@ -469,3 +469,129 @@ If a detail is not in the verified context, state that it is not available in th
         "text": "",
         "message": "LLM providers unreachable. Falling back to deterministic analysis.",
     }
+
+
+def generate_general_assistant_response(
+    user_query: str,
+    conversation_history: Optional[List[Dict[str, str]]] = None,
+    preferred_provider: Optional[str] = None,
+    preferred_model: Optional[str] = None,
+    timeout_seconds: float = 25.0,
+) -> Dict[str, Any]:
+    """
+    Executes a general-purpose technical, architectural, or coding assistant request
+    against the configured LLM provider (Gemini, OpenRouter, NVIDIA NIM, Groq).
+    Provides structured, markdown-formatted responses with code blocks, numbered lists, etc.
+    """
+    system_prompt = (
+        "You are FITMENT.AI Assistant, an elite Technical Recruitment & Enterprise Engineering AI Copilot. "
+        "You assist recruiters, architects, and engineers with deep technical knowledge (such as Cisco CUCM, SIP, VOIP, "
+        "networking, telecommunications, cloud architecture), software engineering (Python, PowerShell, Linux, scripting, "
+        "APIs, RAG, AI agents), technical interview planning, and professional communication. "
+        "Provide authoritative, accurate, structured answers with GitHub-flavored Markdown: "
+        "use clear section headers (###), bullet points, numbered steps, inline code (`code`), "
+        "and fenced code blocks with language identifiers where appropriate. Keep answers insightful and professional."
+    )
+
+    env_order = os.getenv("LLM_FALLBACK_ORDER", "gemini,openrouter,nvidia,groq")
+    order = [p.strip().lower() for p in env_order.split(",") if p.strip()]
+
+    if preferred_provider:
+        p_clean = preferred_provider.lower().replace("google", "gemini").replace("nim", "nvidia").replace(" (gemini-3.5-flash-lite)", "").replace(" (free / cloud llms)", "").strip()
+        for k in PROVIDER_SPECS.keys():
+            if k in p_clean:
+                p_clean = k
+                break
+        if p_clean in order:
+            order.remove(p_clean)
+        order.insert(0, p_clean)
+
+    for provider_id in order:
+        spec = PROVIDER_SPECS.get(provider_id)
+        if not spec:
+            continue
+        key = (os.getenv(spec["env_key"]) or (os.getenv(spec.get("alt_env_key", "")) if spec.get("alt_env_key") else "") or "").strip()
+        if not key or len(key) < 10:
+            continue
+
+        model = (preferred_model if provider_id == order[0] and preferred_model else spec["default_model"])
+
+        try:
+            if provider_id == "gemini":
+                from google import genai
+                from google.genai import types
+
+                client = genai.Client(api_key=key)
+                cfg = types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
+                    temperature=0.4,
+                    max_output_tokens=1500,
+                )
+                start_t = time.time()
+                resp = client.models.generate_content(
+                    model=model,
+                    contents=user_query,
+                    config=cfg,
+                )
+                elapsed = time.time() - start_t
+                if resp and resp.text:
+                    return {
+                        "status": "success",
+                        "provider": spec["display_name"],
+                        "model": model,
+                        "text": resp.text.strip(),
+                        "elapsed_seconds": round(elapsed, 2),
+                    }
+
+            elif provider_id in ("openrouter", "nvidia", "groq"):
+                headers = {
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                }
+                if provider_id == "openrouter":
+                    headers["HTTP-Referer"] = "https://fitment.ai"
+                    headers["X-Title"] = "FITMENT.AI Assistant"
+
+                messages = [{"role": "system", "content": system_prompt}]
+                if conversation_history:
+                    # include up to last 4 messages for conversational context
+                    for msg in conversation_history[-4:]:
+                        if msg.get("role") in ("user", "assistant") and msg.get("content"):
+                            messages.append({"role": msg["role"], "content": msg["content"]})
+                messages.append({"role": "user", "content": user_query})
+
+                payload = {
+                    "model": model,
+                    "max_tokens": 1500,
+                    "temperature": 0.4,
+                    "messages": messages,
+                }
+                start_t = time.time()
+                r = requests.post(spec["endpoint"], headers=headers, json=payload, timeout=timeout_seconds)
+                elapsed = time.time() - start_t
+                if r.status_code == 200:
+                    data = r.json()
+                    content = data["choices"][0]["message"]["content"]
+                    return {
+                        "status": "success",
+                        "provider": spec["display_name"],
+                        "model": model,
+                        "text": content.strip(),
+                        "elapsed_seconds": round(elapsed, 2),
+                    }
+        except Exception:
+            continue
+
+    return {
+        "status": "unavailable",
+        "provider": "None",
+        "model": "None",
+        "text": "",
+        "message": (
+            "⚠️ The general AI assistant service is currently unavailable. "
+            "Please verify that an active AI provider (Gemini, OpenRouter, or NVIDIA NIM) "
+            "is configured and connected in Settings or `.env`."
+        ),
+    }
+

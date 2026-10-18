@@ -718,6 +718,23 @@ def evaluate_candidate_deterministically(
         f"What enterprise tools or alternative frameworks have you leveraged in place of {sample_missing[2]}?" if len(sample_missing) > 2 else "How do you approach deep log forensics and root cause analysis in mission-critical environments?",
     ]
 
+    # 11. Structured Skill Gap Analysis
+    skill_gap_report = analyze_skill_gaps(clean_jd, clean_resume, None)
+
+    # 12. Grounded Recommendation
+    rec_breakdown = generate_grounded_recommendation(
+        {
+            "match_score": final_score,
+            "skills_matched": matched_skills,
+            "missing_skills": missing_skills,
+            "certifications_detected": found_certs,
+            "total_experience_detected": total_exp_label,
+            "interview_questions": interview_questions,
+        },
+        metadata,
+        job_title=clean_jd.splitlines()[0][:60] if clean_jd else "Target Role",
+    )
+
     return {
         "candidate_name": metadata["name"],
         "match_score": final_score,
@@ -734,4 +751,246 @@ def evaluate_candidate_deterministically(
         "human_review_required": True,
         "metadata": metadata,
         "status": "success",
+        "skill_gaps_analysis": skill_gap_report,
+        "grounded_recommendation": rec_breakdown,
+    }
+
+
+SKILL_RATIONALES: Dict[str, str] = {
+    "cucm": "Core call-processing engine for enterprise IP telephony.",
+    "callmanager": "Core call-processing engine for enterprise IP telephony.",
+    "expressway": "Required for secure edge traversal and Mobile & Remote Access (MRA).",
+    "cube": "Border element essential for SIP trunk termination and PSTN interconnect.",
+    "sip": "Foundational signaling protocol for VoIP sessions, trunking, and call control.",
+    "jabber": "Unified communications client for desktop/mobile softphones and messaging.",
+    "webex": "Collaboration platform for cloud meeting, messaging, and hybrid calling.",
+    "uccx": "Contact center express platform for ACD routing and IVR workflows.",
+    "ucce": "Enterprise contact center solution for multi-site omni-channel routing.",
+    "telepresence": "High-definition video conference room and endpoint infrastructure.",
+    "python": "Required for infrastructure scripting, API integrations, and workflow automation.",
+    "automation": "Key competency for operational efficiency and infrastructure as code.",
+    "itil": "Industry standard for incident, problem, and change escalation processes.",
+    "rtp": "Real-time Transport Protocol for audio and video media transport.",
+    "mgcp": "Gateway control protocol for PSTN analog/digital voice ports.",
+    "qos": "Quality of Service priority queuing essential for low latency and jitter-free voice.",
+    "routing": "IP packet path determination and enterprise dynamic routing protocols.",
+    "switching": "Layer 2/3 LAN infrastructure switching and VLAN segmentation.",
+    "firewall": "Perimeter network security and voice packet stateful inspection.",
+    "cloud": "Public or hybrid cloud infrastructure management and migration.",
+    "aws": "Amazon Web Services infrastructure and cloud telephony services.",
+    "azure": "Microsoft Azure cloud identity and enterprise networking.",
+    "linux": "Operating system administration for server appliances and containers.",
+    "docker": "Containerization platform for application packaging and deployment.",
+    "kubernetes": "Container orchestration for distributed microservices architecture.",
+    "incident": "Incident resolution and production support SLA management.",
+}
+
+
+def analyze_skill_gaps(
+    jd_text: Optional[str],
+    resume_text: Optional[str],
+    det_result: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Performs authoritative, deterministic skill gap analysis comparing JD requirements
+    against candidate profile. Distinguishes mandatory vs preferred requirements when present,
+    normalizes skill names, and explains why each prioritized gap matters.
+    Returns a safe empty state when JD or resume text is absent or insufficient.
+    """
+    if not jd_text or not resume_text or len(jd_text.strip()) < 10 or len(resume_text.strip()) < 10:
+        return {
+            "has_data": False,
+            "message": "Please provide both a Job Description and a Candidate Resume to perform skill gap analysis.",
+            "mandatory_gaps": [],
+            "preferred_gaps": [],
+            "core_gaps": [],
+            "matched_skills": [],
+            "undetermined_skills": [],
+            "prioritized_gaps": [],
+        }
+
+    clean_jd = parser.clean_text(jd_text)
+    clean_resume = parser.clean_text(resume_text)
+    jd_lower = clean_jd.lower()
+    resume_lower = clean_resume.lower()
+
+    # Generic stop words to filter out non-technical noise
+    stop_words = {
+        "and", "the", "for", "with", "you", "that", "this", "from", "are", "our",
+        "will", "have", "your", "must", "they", "been", "all", "any", "both", "each",
+        "few", "more", "most", "other", "some", "such", "than", "too", "very", "can",
+        "senior", "junior", "lead", "engineer", "engineering", "developer", "architect",
+        "specialist", "analyst", "manager", "management", "consultant", "director",
+        "years", "year", "experience", "exp", "work", "working", "team", "teams",
+        "skills", "skill", "required", "requirements", "requirement", "preferred",
+        "minimum", "maximum", "role", "roles", "knowledge", "strong", "understanding",
+        "ability", "communication", "written", "verbal", "including", "relevant",
+        "related", "candidate", "candidates", "profile", "summary", "status", "duration",
+        "client", "clients", "company", "companies", "project", "projects", "level",
+        "responsibilities", "responsibility", "solutions", "solution", "systems", "system",
+        "services", "service", "handling", "delivering", "designing", "across", "support",
+        "production", "enterprise", "specifically", "environment", "environments", "least"
+    }
+
+    # Extract all candidate technical keywords
+    resume_words = set(w for w in re.findall(r"\b[a-z]{3,}\b", resume_lower))
+
+    # Tech implications
+    tech_implications: Dict[str, set[str]] = {
+        "cucm": {"cisco", "collaboration", "voice"},
+        "callmanager": {"cisco", "collaboration", "voice"},
+        "expressway": {"cisco", "collaboration"},
+        "cube": {"cisco", "voice"},
+        "jabber": {"cisco", "collaboration"},
+        "webex": {"cisco", "collaboration"},
+        "uccx": {"cisco", "collaboration"},
+        "ucce": {"cisco", "collaboration"},
+        "telepresence": {"cisco", "collaboration"},
+    }
+    implied_skills = set()
+    for rw in resume_words:
+        if rw in tech_implications:
+            implied_skills.update(tech_implications[rw])
+    effective_resume_words = resume_words.union(implied_skills)
+
+    # 1. Parse Mandatory and Preferred sections if delineated in JD
+    mandatory_matches = re.findall(
+        r"(?:mandatory|must\s+have|required|core\s+requirements?|essential)[:\s\n]+(.*?)(?=(?:preferred|nice\s+to\s+have|good\s+to\s+have|desired|optional|responsibilities|experience|\Z))",
+        jd_lower,
+        re.DOTALL,
+    )
+    mandatory_text = " ".join(mandatory_matches) if mandatory_matches else ""
+    mandatory_words = set(w for w in re.findall(r"\b[a-z]{3,}\b", mandatory_text) if w not in stop_words)
+
+    preferred_matches = re.findall(
+        r"(?:preferred|nice\s+to\s+have|good\s+to\s+have|desired|optional)[:\s\n]+(.*?)(?=(?:mandatory|must\s+have|required|responsibilities|\Z))",
+        jd_lower,
+        re.DOTALL,
+    )
+    preferred_text = " ".join(preferred_matches) if preferred_matches else ""
+    preferred_words = set(w for w in re.findall(r"\b[a-z]{3,}\b", preferred_text) if w not in stop_words)
+
+    # All JD technical words
+    all_jd_words = set(w for w in re.findall(r"\b[a-z]{3,}\b", jd_lower) if w not in stop_words)
+
+    # Derive matched and missing
+    matched_set = all_jd_words.intersection(effective_resume_words)
+    missing_set = all_jd_words.difference(effective_resume_words)
+
+    # Classify gaps
+    mandatory_gaps = []
+    preferred_gaps = []
+    core_gaps = []
+
+    for s in sorted(list(missing_set)):
+        rationale = SKILL_RATIONALES.get(s, "Identified technical qualification specified in target role requirements.")
+        gap_obj = {
+            "skill": s,
+            "rationale": rationale,
+        }
+        if s in mandatory_words:
+            gap_obj["tier"] = "Mandatory"
+            mandatory_gaps.append(gap_obj)
+        elif s in preferred_words:
+            gap_obj["tier"] = "Preferred"
+            preferred_gaps.append(gap_obj)
+        else:
+            gap_obj["tier"] = "Core"
+            core_gaps.append(gap_obj)
+
+    # Prioritized list: Mandatory first, then Core, then Preferred
+    prioritized_gaps = mandatory_gaps + core_gaps + preferred_gaps
+
+    # Undetermined: skills mentioned in ambiguous context or where direct hands-on evidence is absent
+    undetermined_skills = []
+    for s in all_jd_words:
+        if s in effective_resume_words:
+            # Check if mentioned only once or as part of a list without detailed bullet points
+            occurrences = len(re.findall(rf"\b{re.escape(s)}\b", resume_lower))
+            if occurrences == 1 and s not in implied_skills:
+                # Weak signal
+                pass
+
+    return {
+        "has_data": True,
+        "mandatory_gaps": mandatory_gaps,
+        "preferred_gaps": preferred_gaps,
+        "core_gaps": core_gaps,
+        "matched_skills": sorted(list(matched_set)),
+        "undetermined_skills": undetermined_skills,
+        "prioritized_gaps": prioritized_gaps,
+    }
+
+
+def generate_grounded_recommendation(
+    det_result: Dict[str, Any],
+    meta: Dict[str, Any],
+    job_title: str = "Target Technical Role",
+) -> Dict[str, Any]:
+    """
+    Generates an authoritative, factual recruitment recommendation grounded entirely in
+    deterministic screening outputs, candidate tenure, and verified credentials.
+    Provides transparent fallback when AI providers are offline or unavailable.
+    """
+    score = det_result.get("match_score", 0)
+    matched = det_result.get("skills_matched", [])
+    missing = det_result.get("missing_skills", [])
+    certs = det_result.get("certifications_detected", [])
+    exp_text = det_result.get("total_experience_detected", "Not Detected")
+    cand_name = meta.get("name", "Candidate")
+
+    if score >= 75:
+        status = "Shortlisted"
+        action = "Prioritize for Technical Interview"
+        summary = (
+            f"{cand_name} demonstrates high keyword and seniority alignment ({score}/100 match). "
+            f"Core requirements for {job_title} are substantiated by verified resume evidence."
+        )
+    elif score >= 50:
+        status = "In Review"
+        action = "Conduct Focused Technical Screening"
+        summary = (
+            f"{cand_name} demonstrates moderate alignment ({score}/100 match). Foundational domain "
+            f"experience is present, but specific technical gaps require recruiter and technical verification."
+        )
+    else:
+        status = "Not Recommended"
+        action = "Review Alternative Roles or Archive"
+        summary = (
+            f"{cand_name} shows low alignment ({score}/100 match) against {job_title} requirements. "
+            f"Significant prerequisite competencies were not detected in the candidate text."
+        )
+
+    strengths: List[str] = []
+    if matched:
+        top_m = ", ".join(matched[:5])
+        strengths.append(f"Demonstrated proficiency across: {top_m}")
+    if exp_text and "Not Detected" not in exp_text:
+        strengths.append(f"Seniority alignment: {exp_text}")
+    if certs:
+        strengths.append(f"Verified certifications: {', '.join(certs)}")
+    if not strengths:
+        strengths.append("Foundational technical background detected in candidate profile.")
+
+    gaps: List[str] = []
+    if missing:
+        top_miss = ", ".join(missing[:5])
+        gaps.append(f"Unverified or missing competencies: {top_miss}")
+    if not certs and any(w in job_title.lower() for w in ["cisco", "voice", "network", "architect"]):
+        gaps.append("No active recognized vendor certifications detected in CV text.")
+    if not gaps:
+        gaps.append("No critical skill or certification gaps identified against the JD.")
+
+    interview_probes = det_result.get("interview_questions", [])[:3]
+
+    return {
+        "status": status,
+        "action": action,
+        "score": score,
+        "summary": summary,
+        "strengths": strengths,
+        "gaps": gaps,
+        "interview_probes": interview_probes,
+        "is_llm": False,
+        "engine_label": "Deterministic Screening Engine (Offline / Rule-Based)",
     }

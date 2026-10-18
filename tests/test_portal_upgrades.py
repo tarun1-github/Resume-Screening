@@ -676,6 +676,110 @@ class TestSection11PortalWideRequirements(unittest.TestCase):
         self.assertIn("+91 9654388916", res["answer"])
         self.assertIn("taruntan@gmail.com", res["answer"])
 
+    # 13. Search candidates with specific technology/company experience
+    def test_13_query_candidates_with_experience(self):
+        bot = chatbot.FitmentAssistant(db_path=self.db_path)
+        res = bot.ask("Find candidates with Cisco experience")
+        self.assertIn("Candidates with `Cisco` Experience", res["answer"])
+        self.assertIn("PRACHI GUPTA", res["answer"])
+
+    # 14. Compare candidates for a target role
+    def test_14_compare_candidates_for_role(self):
+        registry.save_screening(
+            candidate_id=self.shubhangi_id,
+            job_id=self.job1_id,
+            deterministic_score=51,
+            verdict="Moderate Match",
+            recommendation="Review gaps",
+            screening_id="scr-shub-t2",
+            db_path=self.db_path,
+        )
+        bot = chatbot.FitmentAssistant(db_path=self.db_path)
+        res = bot.ask("Compare two candidates for Voice T2")
+        self.assertIn("Candidate Comparison for `Voice T2`", res["answer"])
+        self.assertIn("PRACHI GUPTA", res["answer"])
+        self.assertIn("SHUBHANGI SINGH RATHORE", res["answer"])
+
+    # 15. Recruiter Bharat Raparthy follow-up list query
+    def test_15_bharat_follow_up_list(self):
+        registry.add_follow_up(self.tarun_id, "2020-01-01", notes="Urgent recruiter call", db_path=self.db_path)
+        bot = chatbot.FitmentAssistant(db_path=self.db_path)
+        res = bot.ask("What is Bharat's candidate follow-up list?")
+        self.assertIn("Recruiter Bharat Raparthy — Candidate Follow-Up Pipeline", res["answer"])
+        self.assertIn("Tarun Taneja", res["answer"])
+
+    # 16. Mode B: General AI queries are routed to LLM without candidate requirements
+    def test_16_general_purpose_llm_mode_b(self):
+        bot = chatbot.FitmentAssistant(db_path=self.db_path)
+        with patch("llm_manager.generate_general_assistant_response") as mock_gen_llm:
+            mock_gen_llm.return_value = {
+                "status": "success",
+                "provider": "Mock Gemini",
+                "model": "gemini-3.5-flash-lite",
+                "text": "### SIP Call Flow\n\nSIP operates via INVITE, 200 OK, and ACK messages.",
+            }
+            res = bot.ask("Explain SIP call flow.")
+            self.assertIn("SIP operates via INVITE", res["answer"])
+            mock_gen_llm.assert_called_once()
+
+    # 17. Mode B: When general LLM is unavailable, returns clear service unavailable notice
+    def test_17_general_purpose_llm_unavailable_notice(self):
+        bot = chatbot.FitmentAssistant(db_path=self.db_path)
+        with patch("llm_manager.generate_general_assistant_response") as mock_gen_llm:
+            mock_gen_llm.return_value = {
+                "status": "unavailable",
+                "provider": "None",
+                "model": "None",
+                "text": "",
+                "message": "⚠️ The general AI assistant service is currently unavailable. Please verify that an active AI provider is configured.",
+            }
+            res = bot.ask("Help write a PowerShell script to test TCP ports.")
+            self.assertIn("general AI assistant service is currently unavailable", res["answer"])
+            self.assertNotIn("InstantFit Offline Screening", res["answer"])
+
+    # 18. Ambiguous queries between candidate records and general guidance prompt clarification
+    def test_18_ambiguous_query_triggers_clarification(self):
+        bot = chatbot.FitmentAssistant(db_path=self.db_path)
+        res = bot.ask("check status")
+        self.assertIn("Clarification:", res["answer"])
+        self.assertIn("inspect candidate records", res["answer"])
+
+    # 19. Dashboard Analytics Summary queries real SQLite counts and recent candidates
+    def test_19_dashboard_analytics_summary(self):
+        summary = registry.get_dashboard_analytics_summary(db_path=self.db_path)
+        self.assertIn("total_screened", summary)
+        self.assertIn("shortlisted_count", summary)
+        self.assertIn("interviews_scheduled_count", summary)
+        self.assertIn("joined_count", summary)
+        self.assertIn("total_candidates", summary)
+        self.assertIn("in_review_count", summary)
+        self.assertIn("recent_candidates", summary)
+
+        self.assertGreaterEqual(summary["total_candidates"], 2)
+        self.assertIsInstance(summary["recent_candidates"], list)
+        self.assertGreaterEqual(len(summary["recent_candidates"]), 1)
+        first_rc = summary["recent_candidates"][0]
+        self.assertIn("name", first_rc)
+        self.assertIn("candidate_id", first_rc)
+        self.assertIn("current_status", first_rc)
+
+    # 20. Concise summary derivation for Phase 4 clipboard helper
+    def test_20_extract_concise_summary(self):
+        from app import extract_concise_summary
+        
+        # Test with verdict/summary section
+        resp1 = "## Recommendation\nCandidate demonstrates exceptional Cisco Voice architecture knowledge.\nRecommend advancing to technical round.\n\n## Details\nTenure is 8 years."
+        sum1 = extract_concise_summary(resp1)
+        self.assertIn("Candidate demonstrates exceptional", sum1)
+
+        # Test with bulleted response
+        resp2 = "Here are the key points:\n- Point 1: SIP trunking\n- Point 2: MGCP gateway\n- Point 3: Dial peer configuration"
+        sum2 = extract_concise_summary(resp2)
+        self.assertIn("Point 1", sum2)
+        self.assertIn("Point 2", sum2)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

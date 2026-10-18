@@ -64,3 +64,5 @@ app_cp.py
 app_finetuned.py
 app_local_1.py
 scratch/
+*.png
+data/*.png

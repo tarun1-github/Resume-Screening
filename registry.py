@@ -36,6 +36,37 @@ CANDIDATE_STATUSES = [
     "Joined",
 ]
 
+__all__ = [
+    "DEFAULT_DB_PATH",
+    "CANDIDATE_STATUSES",
+    "get_connection",
+    "init_db",
+    "normalize_phone",
+    "normalize_email",
+    "find_existing_candidate",
+    "upsert_candidate",
+    "upsert_job",
+    "save_screening",
+    "associate_screening_files",
+    "get_screening_files",
+    "normalize_screening_files",
+    "update_candidate_status",
+    "get_candidate_by_id",
+    "find_candidate_by_name",
+    "get_distinct_target_jobs",
+    "add_follow_up",
+    "search_candidates_portal_wide",
+    "get_all_candidates_with_latest_screening",
+    "get_candidates_screened_for_role",
+    "get_candidate_screening_for_role",
+    "get_candidate_by_name_or_query",
+    "get_candidate_screenings",
+    "get_candidate_status_history",
+    "get_follow_ups_overview",
+    "export_candidates_csv",
+    "get_dashboard_analytics_summary",
+]
+
 
 def _get_db_path(db_path: Optional[str] = None) -> str:
     if db_path:
@@ -913,12 +944,15 @@ def search_candidates_portal_wide(
                     OR LOWER(COALESCE(j.job_title, '')) LIKE ?
                     OR LOWER(c.current_status) LIKE ?
                     OR LOWER(COALESCE(s.screening_id, '')) LIKE ?
+                    OR LOWER(COALESCE(s.matched_skills, '')) LIKE ?
+                    OR LOWER(COALESCE(c.certifications, '')) LIKE ?
                     {phone_clause}
                 )
             """
             params.extend([
                 term_like, term_like, term_like, term_like, term_like,
                 term_like, term_like, term_like, term_like, term_like,
+                term_like, term_like,
             ])
             if phone_clause:
                 params.append(f"%{clean_digits}%")
@@ -1206,3 +1240,86 @@ def export_candidates_csv(db_path: Optional[str] = None) -> str:
             r.get("screening_timestamp", r.get("created_at", "")),
         ])
     return output.getvalue()
+
+
+def get_dashboard_analytics_summary(db_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Returns verified aggregate recruitment metrics calculated directly from SQLite records:
+    - total_screened: Total number of completed candidate screenings recorded in `screenings`.
+    - shortlisted_count: Total candidates with status 'Shortlisted'.
+    - interviews_scheduled_count: Candidates with status in ('Interview Scheduled', 'Interview Completed').
+    - joined_count: Candidates with status in ('Selected', 'Offer Released', 'Joined').
+    - total_candidates: Total unique candidate records registered in `candidates`.
+    - in_review_count: Candidates with status 'Recruiter Review'.
+    - recent_candidates: Up to 5 most recently updated candidates, each containing:
+        - candidate_id: str
+        - name: str
+        - current_designation: str
+        - current_status: str
+        - updated_at: str
+        - last_activity_time: str (alias of updated_at)
+        - deterministic_score: Optional[int] (from latest screening)
+        - latest_score: Optional[int] (alias of deterministic_score)
+        - verdict: Optional[str]
+        - job_title: Optional[str]
+        - target_role: str (job_title or current_designation or 'Technical Candidate')
+    """
+    init_db(db_path)
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(screening_id) FROM screenings")
+        total_screened = cursor.fetchone()[0] or 0
+
+        cursor.execute("SELECT COUNT(candidate_id) FROM candidates WHERE current_status = 'Shortlisted'")
+        shortlisted = cursor.fetchone()[0] or 0
+
+        cursor.execute("SELECT COUNT(candidate_id) FROM candidates WHERE current_status IN ('Interview Scheduled', 'Interview Completed')")
+        interviews = cursor.fetchone()[0] or 0
+
+        cursor.execute("SELECT COUNT(candidate_id) FROM candidates WHERE current_status IN ('Selected', 'Offer Released', 'Joined')")
+        joined = cursor.fetchone()[0] or 0
+
+        cursor.execute("SELECT COUNT(candidate_id) FROM candidates")
+        total_candidates = cursor.fetchone()[0] or 0
+
+        cursor.execute("SELECT COUNT(candidate_id) FROM candidates WHERE current_status = 'Recruiter Review'")
+        in_review = cursor.fetchone()[0] or 0
+
+        sql_recent = """
+            SELECT c.candidate_id, c.name, c.current_designation, c.current_status, c.updated_at,
+                   s.deterministic_score, s.verdict, j.job_title
+            FROM candidates c
+            LEFT JOIN (
+                SELECT s1.candidate_id, s1.deterministic_score, s1.verdict, s1.job_id
+                FROM screenings s1
+                INNER JOIN (
+                    SELECT candidate_id, MAX(screening_timestamp) as max_ts
+                    FROM screenings
+                    GROUP BY candidate_id
+                ) s2 ON s1.candidate_id = s2.candidate_id AND s1.screening_timestamp = s2.max_ts
+            ) s ON c.candidate_id = s.candidate_id
+            LEFT JOIN jobs j ON s.job_id = j.job_id
+            ORDER BY c.updated_at DESC
+            LIMIT 5
+        """
+        cursor.execute(sql_recent)
+        recent_rows = cursor.fetchall()
+        recent_candidates = []
+        for r in recent_rows:
+            d = dict(r)
+            d["latest_score"] = d.get("deterministic_score")
+            d["target_role"] = d.get("job_title") or d.get("current_designation") or "Technical Candidate"
+            d["last_activity_time"] = d.get("updated_at")
+            recent_candidates.append(d)
+
+    return {
+        "total_screened": int(total_screened),
+        "shortlisted_count": int(shortlisted),
+        "interviews_scheduled_count": int(interviews),
+        "joined_count": int(joined),
+        "total_candidates": int(total_candidates),
+        "in_review_count": int(in_review),
+        "recent_candidates": recent_candidates,
+    }
+
+
