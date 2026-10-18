@@ -758,6 +758,53 @@ def get_candidate_by_id(candidate_id: str, db_path: Optional[str] = None) -> Opt
         return dict(row) if row else None
 
 
+def find_candidate_by_name(name: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Finds a candidate record by exact or partial name match, returning the candidate
+    along with their latest screening score, verdict, and target job title if available.
+    """
+    if not name or not name.strip():
+        return None
+    clean_name = name.strip()
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        # 1. Exact match (case-insensitive)
+        cursor.execute(
+            """
+            SELECT c.*, s.deterministic_score, s.verdict, j.job_title
+            FROM candidates c
+            LEFT JOIN screenings s ON c.candidate_id = s.candidate_id
+            LEFT JOIN jobs j ON s.job_id = j.job_id
+            WHERE LOWER(c.name) = ?
+            ORDER BY s.screening_timestamp DESC
+            LIMIT 1
+            """,
+            (clean_name.lower(),),
+        )
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+
+        # 2. Substring / partial match
+        cursor.execute(
+            """
+            SELECT c.*, s.deterministic_score, s.verdict, j.job_title
+            FROM candidates c
+            LEFT JOIN screenings s ON c.candidate_id = s.candidate_id
+            LEFT JOIN jobs j ON s.job_id = j.job_id
+            WHERE LOWER(c.name) LIKE ?
+            ORDER BY s.screening_timestamp DESC
+            LIMIT 1
+            """,
+            (f"%{clean_name.lower()}%",),
+        )
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+
+    return None
+
+
 def get_distinct_target_jobs(db_path: Optional[str] = None) -> List[str]:
     """Retrieve distinct target job titles saved in database."""
     init_db(db_path)

@@ -1117,8 +1117,8 @@ with col_workspace:
 
             # Compact Candidate Summary Grid beneath resume panel
             if st.session_state.cv_text_val.strip():
-                preview_meta = deterministic_engine.extract_candidate_metadata(st.session_state.cv_text_val)
-                existing_cand = registry.find_candidate_by_name(preview_meta["name"]) if preview_meta["name"] else None
+                cand_name_preview = preview_meta.get("name") if preview_meta else None
+                existing_cand = registry.find_candidate_by_name(cand_name_preview) if cand_name_preview else None
                 prev_status = existing_cand.get("current_status", "New") if existing_cand else "New"
                 prev_score = f"{existing_cand['deterministic_score']}/100" if existing_cand and existing_cand.get("deterministic_score") is not None else "Pending"
 

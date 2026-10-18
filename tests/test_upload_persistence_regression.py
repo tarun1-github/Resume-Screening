@@ -266,6 +266,21 @@ class TestUploadPersistenceRegression(unittest.TestCase):
         self.assertNotIn("✅", res.get("message", ""))
         self.assertIn("exceeds maximum allowed limit", res["message"])
 
+    # 14. find_candidate_by_name exact and partial match
+    def test_14_find_candidate_by_name(self):
+        cid = registry.upsert_candidate(name="Priya Sharma", email="priya@test.com", db_path=self.db_path)
+        found_exact = registry.find_candidate_by_name("Priya Sharma", db_path=self.db_path)
+        self.assertIsNotNone(found_exact)
+        self.assertEqual(found_exact["candidate_id"], cid)
+
+        found_partial = registry.find_candidate_by_name("Priya", db_path=self.db_path)
+        self.assertIsNotNone(found_partial)
+        self.assertEqual(found_partial["candidate_id"], cid)
+
+        self.assertIsNone(registry.find_candidate_by_name("Unknown Person", db_path=self.db_path))
+        self.assertIsNone(registry.find_candidate_by_name("", db_path=self.db_path))
+        self.assertIsNone(registry.find_candidate_by_name(None, db_path=self.db_path))
+
 
 if __name__ == "__main__":
     unittest.main()
