@@ -1,6 +1,10 @@
 # 🛠️ Operations & Administration Runbook — Recruitment Intelligence Platform
 
-## 1. System Requirements & Environment Setup
+> **Audience**: Platform Administrators, DevOps Engineers, and System Operators.  
+> **Note**: For the modular, expanded operations runbooks, visit [**docs/operations/**](file:///e:/Projects/resume-screening-agent/docs/operations/setup-and-installation.md) and the [**Master Documentation Index**](file:///e:/Projects/resume-screening-agent/docs/README.md).
+
+---
+
 
 ### Minimum System Specifications
 - **Operating System**: Windows 10/11, Ubuntu 20.04/22.04 LTS, or macOS 12+

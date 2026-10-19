@@ -155,3 +155,17 @@ The platform incorporates a robust, fault-tolerant provider management layer in 
 - **No False Positive Connection Badges**: A provider is only marked `Connected` after an active connectivity probe returns HTTP 200 within an 8-second budget. If keys are present but unverified, it displays `Configured`.
 - **Strict Execution Timeouts**: Qualitative LLM generation calls have a maximum timeout of 35 seconds to prevent browser hangs.
 - **Zero Hallucination of Database Facts**: The Fitment Assistant retrieves facts (mobile numbers, scores, dates) directly from SQLite; the LLM is never permitted to invent candidate data.
+
+---
+
+## 5. Specialized AI Documentation Guides
+
+For in-depth analysis of specific AI subsystems, refer to:
+- [**AI Ecosystem Overview (`docs/ai/ai-ecosystem.md`)**](file:///e:/Projects/resume-screening-agent/docs/ai/ai-ecosystem.md)
+- [**Deterministic vs. Generative AI Deep-Dive (`docs/ai/deterministic-vs-genai.md`)**](file:///e:/Projects/resume-screening-agent/docs/ai/deterministic-vs-genai.md)
+- [**Chatbot Modes & Intent Routing (`docs/ai/chatbot-modes.md`)**](file:///e:/Projects/resume-screening-agent/docs/ai/chatbot-modes.md)
+- [**Grounding and Retrieval Architecture (`docs/ai/grounding-and-retrieval.md`)**](file:///e:/Projects/resume-screening-agent/docs/ai/grounding-and-retrieval.md)
+- [**Provider Integration & Gateways (`docs/ai/provider-integration.md`)**](file:///e:/Projects/resume-screening-agent/docs/ai/provider-integration.md)
+- [**Agentic AI Assessment (`docs/ai/agentic-ai-assessment.md`)**](file:///e:/Projects/resume-screening-agent/docs/ai/agentic-ai-assessment.md)
+- [**AI Evaluation & Safety Guardrails (`docs/ai/ai-evaluation.md`)**](file:///e:/Projects/resume-screening-agent/docs/ai/ai-evaluation.md)
+

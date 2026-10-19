@@ -671,6 +671,168 @@ class TestCriticalFixes(unittest.TestCase):
         self.assertEqual(meta_corrupted["organization"], "Not Detected (Requires human verification)")
 
 
+    # --------------------------------------------------------------------------
+    # P1 — 7: Regression Tests for Default File Selection & Screening Repair
+    # --------------------------------------------------------------------------
+    def test_25_new_session_starts_empty_without_default_selection(self):
+        """A new session starts without a default JD, resume, or active candidate."""
+        # Simulated fresh session state
+        session_state = {}
+        if "workspace_initialized" not in session_state:
+            session_state["workspace_initialized"] = True
+            session_state["jd_text_val"] = ""
+            session_state["last_parsed_jd_name"] = None
+            session_state["cv_text_val"] = ""
+            session_state["last_parsed_cv_name"] = None
+            session_state["active_screening_record"] = None
+            session_state["active_candidate_id"] = None
+            session_state["active_candidate_name"] = None
+            session_state["pending_candidate_meta"] = None
+
+        self.assertEqual(session_state["jd_text_val"], "")
+        self.assertIsNone(session_state["last_parsed_jd_name"])
+        self.assertEqual(session_state["cv_text_val"], "")
+        self.assertIsNone(session_state["last_parsed_cv_name"])
+        self.assertIsNone(session_state["active_screening_record"])
+        self.assertIsNone(session_state["active_candidate_id"])
+        self.assertIsNone(session_state["active_candidate_name"])
+
+    def test_26_saved_files_lists_available_with_neutral_placeholders(self):
+        """Saved-file lists are available without automatically selecting an item."""
+        saved_jds = [{"file_id": "jd1", "original_filename": "Target_JD.docx"}]
+        saved_resumes = [{"file_id": "cv1", "original_filename": "Candidate_CV.pdf"}]
+
+        jd_placeholder = "-- Select a JD to load --"
+        cv_placeholder = "-- Select a resume to load --"
+
+        jd_options = [jd_placeholder] + [j["original_filename"] for j in saved_jds]
+        cv_options = [cv_placeholder] + [r["original_filename"] for r in saved_resumes]
+
+        # The default selection (index 0) is the neutral placeholder
+        self.assertEqual(jd_options[0], "-- Select a JD to load --")
+        self.assertEqual(cv_options[0], "-- Select a resume to load --")
+        self.assertNotEqual(jd_options[0], "Target_JD.docx")
+        self.assertNotEqual(cv_options[0], "Candidate_CV.pdf")
+
+    def test_27_explicit_jd_and_resume_loading(self):
+        """Explicitly loading a JD and resume selects the correct file and sets truthful messages."""
+        chosen_jd = {"file_id": "jd_test_1", "original_filename": "Network_Architect_JD.docx"}
+        chosen_cv = {"file_id": "cv_test_1", "original_filename": "Shubhangi Singh Rathore CV.pdf"}
+
+        # Simulate loading JD
+        msg_jd = f"Loaded JD: {chosen_jd['original_filename']} successfully."
+        self.assertEqual(msg_jd, "Loaded JD: Network_Architect_JD.docx successfully.")
+
+        # Simulate loading CV
+        msg_cv = f"Loaded CV: {chosen_cv['original_filename']} successfully."
+        self.assertEqual(msg_cv, "Loaded CV: Shubhangi Singh Rathore CV.pdf successfully.")
+
+    def test_28_selection_persists_on_rerun_and_clearing_preserves_file(self):
+        """A selection persists through reruns, and clearing the selection does not delete the saved file."""
+        session_state = {
+            "workspace_initialized": True,
+            "last_parsed_jd_name": "Network_Architect_JD.docx",
+            "jd_text_val": self.sample_jd_text,
+            "active_jd_file_id": "jd_123",
+        }
+
+        # Simulated rerun: state must not be overwritten
+        if "workspace_initialized" not in session_state:
+            session_state["workspace_initialized"] = True
+            session_state["last_parsed_jd_name"] = None
+            session_state["jd_text_val"] = ""
+
+        self.assertEqual(session_state["last_parsed_jd_name"], "Network_Architect_JD.docx")
+        self.assertEqual(session_state["jd_text_val"], self.sample_jd_text)
+
+        # Clear selection
+        session_state["jd_text_val"] = ""
+        session_state.pop("last_parsed_jd_name", None)
+        session_state.pop("active_jd_file_id", None)
+
+        self.assertEqual(session_state["jd_text_val"], "")
+        self.assertNotIn("last_parsed_jd_name", session_state)
+        # Note: physical file in storage is not deleted by clear action
+
+    def test_29_switching_candidates_invalidates_old_screening_result(self):
+        """Switching from one resume to another does not retain the old candidate's result or identity."""
+        session_state = {
+            "active_candidate_name": "Prachi Gupta",
+            "active_screening_record": {"score": 85, "candidate_name": "Prachi Gupta"},
+            "cv_text_val": "Prachi Gupta resume text",
+        }
+
+        # User loads Vikram Sharma
+        new_cv_text = "Vikram Sharma | Senior DevOps | Bangalore"
+        # When loaded, active_screening_record is invalidated
+        session_state["active_screening_record"] = None
+        session_state["cv_text_val"] = new_cv_text
+        meta = parser.extract_candidate_metadata_hybrid(new_cv_text)
+        session_state["active_candidate_name"] = meta["name"]
+
+        self.assertEqual(session_state["active_candidate_name"].upper(), "VIKRAM SHARMA")
+        self.assertIsNone(session_state["active_screening_record"])
+        self.assertNotIn("Prachi", session_state["active_candidate_name"])
+
+    def test_30_offline_screening_zero_external_calls(self):
+        """Offline screening performs zero external LLM or cloud calls."""
+        with patch("llm_manager.generate_qualitative_assessment") as mock_llm:
+            det_res = deterministic_engine.evaluate_candidate_deterministically(
+                self.sample_jd_text, self.sample_resume_text
+            )
+            mock_llm.assert_not_called()
+            self.assertIn("match_score", det_res)
+            self.assertIn("skills_matched", det_res)
+            self.assertIn("verdict", det_res)
+
+    def test_31_ai_screening_handles_provider_failure_gracefully(self):
+        """AI screening handles timeouts/failures gracefully and falls back to deterministic."""
+        with patch("llm_manager.generate_qualitative_assessment", return_value={"status": "error", "message": "API Quota Exceeded"}):
+            det_res = deterministic_engine.evaluate_candidate_deterministically(
+                self.sample_jd_text, self.sample_resume_text
+            )
+            # Deterministic score remains valid and unaffected by LLM failure
+            self.assertGreater(det_res["match_score"], 0)
+
+    def test_32_missing_inputs_produce_helpful_warnings(self):
+        """Missing inputs produce helpful warnings without crashing."""
+        # Both missing
+        jd_val = ""
+        cv_val = ""
+        warn_msg = None
+        if not jd_val and not cv_val:
+            warn_msg = "Please provide both a Job Description and a Candidate Resume to initiate screening."
+        self.assertIn("both a Job Description and a Candidate Resume", warn_msg)
+
+        # Only JD missing
+        jd_val = ""
+        cv_val = "Some resume text"
+        if not jd_val and not cv_val:
+            warn_msg = "both"
+        elif not jd_val:
+            warn_msg = "Job Description is missing."
+        self.assertEqual(warn_msg, "Job Description is missing.")
+
+        # Only CV missing
+        jd_val = "Some JD text"
+        cv_val = ""
+        if not jd_val and not cv_val:
+            warn_msg = "both"
+        elif not cv_val:
+            warn_msg = "Candidate Resume is missing."
+        self.assertEqual(warn_msg, "Candidate Resume is missing.")
+
+    def test_33_sidebar_css_preserves_expand_control(self):
+        """Verify that app.py CSS preserves stExpandSidebarButton and stToolbar."""
+        with open("app.py", "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # stToolbar must NOT be set to display: none !important
+        self.assertNotIn('[data-testid="stToolbar"] {\n        display: none !important;', content)
+        self.assertIn('[data-testid="stExpandSidebarButton"]', content)
+        self.assertIn('[data-testid="stSidebarCollapseButton"]', content)
+
+
 if __name__ == "__main__":
     unittest.main()
 

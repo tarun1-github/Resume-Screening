@@ -15,10 +15,14 @@ import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time, timedelta
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional, Tuple, Generator
 
 logger = logging.getLogger(__name__)
+
+IST = ZoneInfo("Asia/Kolkata")
+UTC = ZoneInfo("UTC")
 
 DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "fitment.db")
 
@@ -65,6 +69,12 @@ __all__ = [
     "get_follow_ups_overview",
     "export_candidates_csv",
     "get_dashboard_analytics_summary",
+    "IST",
+    "UTC",
+    "parse_to_ist",
+    "format_last_screened",
+    "get_current_ist_str",
+    "get_candidate_last_screened_timestamp",
 ]
 
 
@@ -78,6 +88,54 @@ def _get_db_path(db_path: Optional[str] = None) -> str:
             raw_path = os.path.join(os.path.dirname(__file__), raw_path)
         return raw_path
     return DEFAULT_DB_PATH
+
+
+def parse_to_ist(dt_str: Optional[str]) -> Optional[datetime]:
+    """Parses a naive, UTC, or timezone-aware ISO timestamp and converts to Asia/Kolkata."""
+    if not dt_str or not str(dt_str).strip():
+        return None
+    try:
+        clean_str = str(dt_str).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean_str)
+        if dt.tzinfo is None:
+            # Legacy timestamps in fitment.db were stored as local time (IST)
+            dt = dt.replace(tzinfo=IST)
+        else:
+            dt = dt.astimezone(IST)
+        return dt
+    except Exception:
+        return None
+
+
+def format_last_screened(timestamp_str: Optional[str]) -> str:
+    """
+    Formats a candidate's screening timestamp for display in IST:
+    'Last screened: 19 Oct 2026, 08:42:15 IST' or 'Not screened yet'
+    """
+    if not timestamp_str or not str(timestamp_str).strip():
+        return "Not screened yet"
+    dt = parse_to_ist(timestamp_str)
+    if not dt:
+        return "Not screened yet"
+    return f"Last screened: {dt.strftime('%d %b %Y, %H:%M:%S IST')}"
+
+
+def get_current_ist_str() -> str:
+    """Returns dynamic current date and time formatted in IST: '19 Oct 2026 | 08:58:00 IST (UTC+05:30)'"""
+    now_ist = datetime.now(IST)
+    return now_ist.strftime("%d %b %Y | %H:%M:%S IST (UTC+05:30)")
+
+
+def get_candidate_last_screened_timestamp(candidate_id: str, db_path: Optional[str] = None) -> Optional[str]:
+    """Retrieve the latest screening execution timestamp for a candidate."""
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT MAX(screening_timestamp) FROM screenings WHERE candidate_id = ?",
+            (candidate_id,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row and row[0] else None
 
 
 @contextmanager
@@ -369,7 +427,7 @@ def upsert_candidate(
     Insert or update candidate record.
     Returns candidate_id.
     """
-    now_iso = datetime.now().isoformat()
+    now_iso = datetime.now(IST).isoformat()
     cid = candidate_id or str(uuid.uuid4())[:8]
 
     # Check duplicate if ID not provided
@@ -468,7 +526,7 @@ def upsert_job(
     db_path: Optional[str] = None,
 ) -> str:
     """Save or update target job record."""
-    now_iso = datetime.now().isoformat()
+    now_iso = datetime.now(IST).isoformat()
     jid = job_id or f"job-{uuid.uuid4().hex[:6]}"
     req_json = json.dumps(required_skills or [])
     pref_json = json.dumps(preferred_skills or [])
@@ -520,12 +578,13 @@ def save_screening(
     llm_model: str = "None",
     screening_id: Optional[str] = None,
     db_path: Optional[str] = None,
+    screening_timestamp: Optional[str] = None,
 ) -> str:
     """
     Save an authoritative screening record. Does NOT overwrite past screenings for the same candidate.
     """
     sid = screening_id or f"scr-{uuid.uuid4().hex[:8]}"
-    now_iso = datetime.now().isoformat()
+    now_iso = screening_timestamp or datetime.now(IST).isoformat()
 
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
@@ -574,7 +633,7 @@ def associate_screening_files(
     db_path: Optional[str] = None,
 ) -> None:
     """Associates stored files with their resulting screening record (many-to-many capable)."""
-    now_iso = datetime.now().isoformat()
+    now_iso = datetime.now(IST).isoformat()
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
         if jd_file_id:
@@ -755,7 +814,7 @@ def update_candidate_status(
     if new_status not in CANDIDATE_STATUSES:
         return False
 
-    now_iso = datetime.now().isoformat()
+    now_iso = datetime.now(IST).isoformat()
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT current_status FROM candidates WHERE candidate_id = ?", (candidate_id,))
@@ -853,7 +912,7 @@ def add_follow_up(
     db_path: Optional[str] = None,
 ) -> int:
     """Persists candidate follow-up date."""
-    now_iso = datetime.now().isoformat()
+    now_iso = datetime.now(IST).isoformat()
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -887,7 +946,7 @@ def search_candidates_portal_wide(
     and recruitment status using normalized search terms and parameterized SQL.
     """
     init_db(db_path)
-    today_str = date.today().isoformat()
+    today_str = datetime.now(IST).date().isoformat()
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
         sql = """
@@ -1184,7 +1243,7 @@ def get_follow_ups_overview(db_path: Optional[str] = None) -> Dict[str, List[Dic
     """
     Categorizes follow-ups into overdue, due_today, and upcoming.
     """
-    today_str = date.today().isoformat()
+    today_str = datetime.now(IST).date().isoformat()
     init_db(db_path)
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
@@ -1242,15 +1301,18 @@ def export_candidates_csv(db_path: Optional[str] = None) -> str:
     return output.getvalue()
 
 
-def get_dashboard_analytics_summary(db_path: Optional[str] = None) -> Dict[str, Any]:
+def get_dashboard_analytics_summary(
+    db_path: Optional[str] = None,
+    target_date: Optional[date] = None,
+) -> Dict[str, Any]:
     """
     Returns verified aggregate recruitment metrics calculated directly from SQLite records:
-    - total_screened: Total number of completed candidate screenings recorded in `screenings`.
-    - shortlisted_count: Total candidates with status 'Shortlisted'.
-    - interviews_scheduled_count: Candidates with status in ('Interview Scheduled', 'Interview Completed').
-    - joined_count: Candidates with status in ('Selected', 'Offer Released', 'Joined').
-    - total_candidates: Total unique candidate records registered in `candidates`.
-    - in_review_count: Candidates with status 'Recruiter Review'.
+    - total_screened: Total candidate screenings executed during the IST calendar day.
+    - shortlisted_count: Candidates transitioned into 'Shortlisted' during the IST calendar day.
+    - interviews_scheduled_count: Candidates transitioned into interview status during the IST calendar day.
+    - joined_count: Candidates transitioned into joined/selected status during the IST calendar day.
+    - total_candidates: Total unique candidate records registered in `candidates` (all-time).
+    - in_review_count: Candidates currently in 'Recruiter Review'.
     - recent_candidates: Up to 5 most recently updated candidates, each containing:
         - candidate_id: str
         - name: str
@@ -1263,34 +1325,119 @@ def get_dashboard_analytics_summary(db_path: Optional[str] = None) -> Dict[str, 
         - verdict: Optional[str]
         - job_title: Optional[str]
         - target_role: str (job_title or current_designation or 'Technical Candidate')
+        - screening_timestamp: Optional[str] (latest screening execution timestamp in IST)
     """
     init_db(db_path)
+    if target_date is None:
+        target_date = datetime.now(IST).date()
+
+    next_date = target_date + timedelta(days=1)
+    ist_start = f"{target_date.isoformat()}T00:00:00"
+    ist_end = f"{next_date.isoformat()}T00:00:00"
+
+    ist_start_dt = datetime.combine(target_date, time.min, tzinfo=IST)
+    ist_end_dt = datetime.combine(next_date, time.min, tzinfo=IST)
+    utc_start = ist_start_dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    utc_end = ist_end_dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    date_params = (ist_start, ist_end, utc_start, utc_end)
+
+    def _within_ist_day(col_name: str) -> str:
+        return f"""(
+            ({col_name} NOT LIKE '%Z' AND {col_name} NOT LIKE '%+00:00' AND {col_name} >= ? AND {col_name} < ?)
+            OR
+            (({col_name} LIKE '%Z' OR {col_name} LIKE '%+00:00') AND {col_name} >= ? AND {col_name} < ?)
+        )"""
+
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(screening_id) FROM screenings")
+
+        # 1. Screened: screening executions during the current IST calendar day
+        cursor.execute(
+            f"SELECT COUNT(screening_id) FROM screenings WHERE {_within_ist_day('screening_timestamp')}",
+            date_params,
+        )
         total_screened = cursor.fetchone()[0] or 0
 
-        cursor.execute("SELECT COUNT(candidate_id) FROM candidates WHERE current_status = 'Shortlisted'")
+        # 2. Shortlisted: status transitions into Shortlisted during the current IST calendar day
+        cursor.execute(
+            f"""
+            SELECT COUNT(DISTINCT candidate_id) FROM candidate_status_history
+            WHERE new_status = 'Shortlisted' AND {_within_ist_day('changed_at')}
+            """,
+            date_params,
+        )
         shortlisted = cursor.fetchone()[0] or 0
+        # Safe fallback for legacy candidates without status history records
+        cursor.execute(
+            f"""
+            SELECT COUNT(DISTINCT candidate_id) FROM candidates
+            WHERE current_status = 'Shortlisted'
+              AND candidate_id NOT IN (SELECT candidate_id FROM candidate_status_history)
+              AND {_within_ist_day('updated_at')}
+            """,
+            date_params,
+        )
+        shortlisted += cursor.fetchone()[0] or 0
 
-        cursor.execute("SELECT COUNT(candidate_id) FROM candidates WHERE current_status IN ('Interview Scheduled', 'Interview Completed')")
+        # 3. Interview: status transitions into interview status during the current IST calendar day
+        cursor.execute(
+            f"""
+            SELECT COUNT(DISTINCT candidate_id) FROM candidate_status_history
+            WHERE new_status IN ('Interview Scheduled', 'Interview Completed') AND {_within_ist_day('changed_at')}
+            """,
+            date_params,
+        )
         interviews = cursor.fetchone()[0] or 0
+        cursor.execute(
+            f"""
+            SELECT COUNT(DISTINCT candidate_id) FROM candidates
+            WHERE current_status IN ('Interview Scheduled', 'Interview Completed')
+              AND candidate_id NOT IN (SELECT candidate_id FROM candidate_status_history)
+              AND {_within_ist_day('updated_at')}
+            """,
+            date_params,
+        )
+        interviews += cursor.fetchone()[0] or 0
 
-        cursor.execute("SELECT COUNT(candidate_id) FROM candidates WHERE current_status IN ('Selected', 'Offer Released', 'Joined')")
+        # 4. Joined: status transitions into Joined / Selected / Offer Released during the current IST calendar day
+        cursor.execute(
+            f"""
+            SELECT COUNT(DISTINCT candidate_id) FROM candidate_status_history
+            WHERE new_status IN ('Joined', 'Selected', 'Offer Released') AND {_within_ist_day('changed_at')}
+            """,
+            date_params,
+        )
         joined = cursor.fetchone()[0] or 0
+        cursor.execute(
+            f"""
+            SELECT COUNT(DISTINCT candidate_id) FROM candidates
+            WHERE current_status IN ('Joined', 'Selected', 'Offer Released')
+              AND candidate_id NOT IN (SELECT candidate_id FROM candidate_status_history)
+              AND {_within_ist_day('updated_at')}
+            """,
+            date_params,
+        )
+        joined += cursor.fetchone()[0] or 0
 
+        # 5. Total Candidates registered (all time)
         cursor.execute("SELECT COUNT(candidate_id) FROM candidates")
         total_candidates = cursor.fetchone()[0] or 0
 
+        # 6. Candidates currently in review (all time)
         cursor.execute("SELECT COUNT(candidate_id) FROM candidates WHERE current_status = 'Recruiter Review'")
         in_review = cursor.fetchone()[0] or 0
 
+        # 7. Total all-time screenings
+        cursor.execute("SELECT COUNT(screening_id) FROM screenings")
+        all_time_screened = cursor.fetchone()[0] or 0
+
+        # 8. Recent candidates with their latest screening timestamp
         sql_recent = """
             SELECT c.candidate_id, c.name, c.current_designation, c.current_status, c.updated_at,
-                   s.deterministic_score, s.verdict, j.job_title
+                   s.deterministic_score, s.verdict, s.screening_timestamp, j.job_title
             FROM candidates c
             LEFT JOIN (
-                SELECT s1.candidate_id, s1.deterministic_score, s1.verdict, s1.job_id
+                SELECT s1.candidate_id, s1.deterministic_score, s1.verdict, s1.screening_timestamp, s1.job_id
                 FROM screenings s1
                 INNER JOIN (
                     SELECT candidate_id, MAX(screening_timestamp) as max_ts
@@ -1310,6 +1457,7 @@ def get_dashboard_analytics_summary(db_path: Optional[str] = None) -> Dict[str, 
             d["latest_score"] = d.get("deterministic_score")
             d["target_role"] = d.get("job_title") or d.get("current_designation") or "Technical Candidate"
             d["last_activity_time"] = d.get("updated_at")
+            d["screening_timestamp"] = d.get("screening_timestamp")
             recent_candidates.append(d)
 
     return {
@@ -1320,6 +1468,11 @@ def get_dashboard_analytics_summary(db_path: Optional[str] = None) -> Dict[str, 
         "total_candidates": int(total_candidates),
         "in_review_count": int(in_review),
         "recent_candidates": recent_candidates,
+        "today_screened": int(total_screened),
+        "today_shortlisted": int(shortlisted),
+        "today_interview": int(interviews),
+        "today_joined": int(joined),
+        "all_time_screened": int(all_time_screened),
     }
 
 

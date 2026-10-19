@@ -90,3 +90,14 @@ If you discover a security vulnerability or credential leak within this reposito
 Please report the issue responsibly to the project maintainers:
 - **Repository**: [https://github.com/tarun1-github/Resume-Screening](https://github.com/tarun1-github/Resume-Screening)
 - **Maintainer**: Project Engineering Team
+
+---
+
+## 8. Specialized Security & Governance Guides
+
+For in-depth security specifications and architectural controls:
+- [**Data Architecture & Schema (`DATA_ARCHITECTURE.md`)**](file:///e:/Projects/resume-screening-agent/DATA_ARCHITECTURE.md)
+- [**STRIDE Threat Model & PII Mitigations (`docs/data-and-security/privacy-and-threat-model.md`)**](file:///e:/Projects/resume-screening-agent/docs/data-and-security/privacy-and-threat-model.md)
+- [**Secrets Governance & Configuration Reference (`docs/data-and-security/secrets-and-configuration.md`)**](file:///e:/Projects/resume-screening-agent/docs/data-and-security/secrets-and-configuration.md)
+- [**Data Lifecycle & Erasure (`docs/data-and-security/data-lifecycle.md`)**](file:///e:/Projects/resume-screening-agent/docs/data-and-security/data-lifecycle.md)
+

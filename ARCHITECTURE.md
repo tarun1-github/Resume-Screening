@@ -258,3 +258,16 @@ The Fitment Assistant (`chatbot.py`) functions as a domain-specialized conversat
 - **Data Protection**: Uploaded candidate files, SQLite database, and logs are segregated into `data/` and excluded from Git commits via `.gitignore`.
 - **Zero API Key Leakage**: API credentials reside in local `.env` or password-masked Streamlit widgets; keys are never stored in database tables or logs.
 - **SQL Parameterization**: All database transactions use SQLite `?` placeholders, eliminating SQL injection risks.
+
+---
+
+## 9. Comprehensive Architecture Vault & Specialized Guides
+
+For specialized architectural topics, refer to the following companion guides:
+
+- [**Application Architecture (`APPLICATION_ARCHITECTURE.md`)**](file:///e:/Projects/resume-screening-agent/APPLICATION_ARCHITECTURE.md) — Detailed tier breakdown, data contracts, and component interfaces.
+- [**Data Architecture (`DATA_ARCHITECTURE.md`)**](file:///e:/Projects/resume-screening-agent/DATA_ARCHITECTURE.md) — SQLite schema, ER model, storage engine, and IST timezone boundary queries.
+- [**AI Architecture (`AI_ARCHITECTURE.md`)**](file:///e:/Projects/resume-screening-agent/AI_ARCHITECTURE.md) — AI taxonomy, deterministic scoring formulas, and provider integrations.
+- [**Security Policy (`SECURITY.md`)**](file:///e:/Projects/resume-screening-agent/SECURITY.md) — STRIDE threat model, secrets governance, and PII protection.
+- [**Documentation Vault (`docs/README.md`)**](file:///e:/Projects/resume-screening-agent/docs/README.md) — Master index of all 33+ specialized technical guides across Architecture, AI, Data & Security, Learning, and Operations.
+

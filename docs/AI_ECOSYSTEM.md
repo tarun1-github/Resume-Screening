@@ -1,6 +1,7 @@
 # 🌐 Recruitment Intelligence Platform — AI Ecosystem Executive Guide
 
-> **Audience**: Talent Acquisition Leadership, Solution Architects, Technical Hiring Managers, and AI Governance Committees.
+> **Audience**: Talent Acquisition Leadership, Solution Architects, Technical Hiring Managers, and AI Governance Committees.  
+> **Note**: For the modular, expanded AI knowledge base, visit [**docs/ai/**](file:///e:/Projects/resume-screening-agent/docs/ai/ai-ecosystem.md) and the [**Master Documentation Index**](file:///e:/Projects/resume-screening-agent/docs/README.md).
 
 ---
 

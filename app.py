@@ -31,7 +31,7 @@ import storage
 # Safeguard: in long-running or reloaded Streamlit sessions, ensure modules reflect latest disk exports
 if not hasattr(deterministic_engine, "analyze_skill_gaps"):
     deterministic_engine = importlib.reload(deterministic_engine)
-if not hasattr(registry, "get_dashboard_analytics_summary"):
+if not hasattr(registry, "get_current_ist_str") or not hasattr(registry, "format_last_screened"):
     registry = importlib.reload(registry)
 if not hasattr(parser, "extract_candidate_metadata_hybrid"):
     parser = importlib.reload(parser)
@@ -88,39 +88,55 @@ st.markdown(
         background-color: transparent !important;
         min-height: 2.2rem !important;
         height: auto !important;
-        z-index: 999 !important;
+        z-index: 99999 !important;
+        overflow: visible !important;
+    }
+    [data-testid="stToolbar"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        background: transparent !important;
+        height: auto !important;
+        width: auto !important;
         overflow: visible !important;
     }
     .stDeployButton,
-    [data-testid="stToolbar"],
+    [data-testid="stToolbarActions"],
+    [data-testid="stAppDeployButton"],
     #MainMenu,
     footer {
         display: none !important;
     }
     [data-testid="stSidebarCollapseButton"],
     [data-testid="stSidebarCollapsedControl"],
-    [data-testid="collapsedControl"] {
+    [data-testid="collapsedControl"],
+    [data-testid="stExpandSidebarButton"] {
         display: flex !important;
         visibility: visible !important;
         opacity: 1 !important;
         z-index: 999999 !important;
     }
     [data-testid="stSidebarCollapsedControl"],
-    [data-testid="collapsedControl"] {
-        top: 8px !important;
-        left: 8px !important;
+    [data-testid="collapsedControl"],
+    [data-testid="stExpandSidebarButton"] {
         background: #FFFFFF !important;
         border: 1px solid #CBD5E1 !important;
         border-radius: 8px !important;
-        box-shadow: 0 2px 6px rgba(16, 35, 78, 0.08) !important;
+        box-shadow: 0 2px 6px rgba(16, 35, 78, 0.12) !important;
+        color: #2164F3 !important;
     }
     .block-container {
-        max-width: 1536px !important;
+        max-width: 100% !important;
         margin: 0 auto !important;
         padding-top: 1.2rem !important;
         padding-bottom: 2rem !important;
-        padding-left: 1.8rem !important;
-        padding-right: 1.8rem !important;
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+        box-sizing: border-box !important;
+    }
+    [data-testid="column"] {
+        min-width: 0 !important;
+        box-sizing: border-box !important;
     }
 
     /* CUSTOM ACTION BUTTONS MATCHING SCREENSHOT B (VIEW FULL PROFILE & VIEW DETAILED ANALYSIS) */
@@ -142,6 +158,67 @@ st.markdown(
         background: #DBEAFE !important;
         border-color: #93C5FD !important;
         color: #1D4ED8 !important;
+    }
+
+    /* DETAILED COMPETENCY BREAKDOWN TAB NAVIGATION */
+    [data-testid="stButtonGroup"] {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+        overflow: visible !important;
+        width: 100% !important;
+        margin-top: 2px !important;
+        margin-bottom: 18px !important;
+    }
+    [data-testid="stButtonGroup"] button {
+        display: inline-flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 6px !important;
+        white-space: nowrap !important;
+        flex: 0 1 auto !important;
+        border-radius: 9px !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+        padding: 7px 14px !important;
+        border: 1px solid #CBD5E1 !important;
+        background: #FFFFFF !important;
+        color: #10234E !important;
+        box-shadow: 0 1px 2px rgba(16, 35, 78, 0.04) !important;
+        transition: all 0.15s ease !important;
+    }
+    [data-testid="stButtonGroup"] button div {
+        display: inline-flex !important;
+        align-items: center !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    [data-testid="stButtonGroup"] button p {
+        margin: 0 !important;
+        padding: 0 !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        color: inherit !important;
+    }
+    [data-testid="stButtonGroup"] button:hover {
+        border-color: #2164F3 !important;
+        color: #2164F3 !important;
+        background: #F0F7FF !important;
+    }
+    [data-testid="stButtonGroup"] button[aria-checked="true"],
+    [data-testid="stButtonGroup"] button[data-selected="true"] {
+        background: #2164F3 !important;
+        color: #FFFFFF !important;
+        border-color: #2164F3 !important;
+        box-shadow: 0 2px 8px rgba(33, 100, 243, 0.28) !important;
+        font-weight: 700 !important;
+    }
+    [data-testid="stButtonGroup"] button[aria-checked="true"] p,
+    [data-testid="stButtonGroup"] button[data-selected="true"] p {
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
     }
 
     /* TYPOGRAPHY HIERARCHY */
@@ -371,6 +448,17 @@ st.markdown(
         margin: 0 !important;
         font-weight: 500 !important;
     }
+    .welcome-clock-pill {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        margin-top: 8px !important;
+        background: #FFFFFF !important;
+        border: 1px solid #D9E5F7 !important;
+        border-radius: 20px !important;
+        padding: 3px 10px !important;
+        box-shadow: 0 1px 3px rgba(33, 100, 243, 0.06) !important;
+    }
     .activity-summary-card-target {
         background: #FFFFFF !important;
         border: 1px solid #DCE7F8 !important;
@@ -518,6 +606,9 @@ st.markdown(
         align-items: center;
         justify-content: space-between;
         margin-bottom: 10px;
+        min-width: 0;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     /* SCREENING BUTTONS */
@@ -635,6 +726,9 @@ st.markdown(
         padding: 16px 18px !important;
         box-shadow: 0 2px 8px rgba(16, 35, 78, 0.04) !important;
         margin-bottom: 14px !important;
+        min-width: 0 !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
     }
     .bot-avatar-circle-target {
         width: 36px;
@@ -1101,6 +1195,87 @@ def render_welcome_illustration() -> str:
     </svg>"""
 
 
+def get_current_ist_str() -> str:
+    """Returns dynamic current date and time formatted in IST: '19 Oct 2026 | 08:58:00 IST (UTC+05:30)'."""
+    if hasattr(registry, "get_current_ist_str"):
+        return registry.get_current_ist_str()
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%d %b %Y | %H:%M:%S IST (UTC+05:30)")
+
+
+def format_last_screened(timestamp_str: Optional[str]) -> str:
+    """Formats candidate screening timestamp for display in IST: 'Last screened: 19 Oct 2026, 08:42:15 IST' or 'Not screened yet'."""
+    if hasattr(registry, "format_last_screened"):
+        return registry.format_last_screened(timestamp_str)
+    if not timestamp_str or not str(timestamp_str).strip():
+        return "Not screened yet"
+    from zoneinfo import ZoneInfo
+    try:
+        clean_str = str(timestamp_str).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean_str)
+        ist = ZoneInfo("Asia/Kolkata")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ist)
+        else:
+            dt = dt.astimezone(ist)
+        return f"Last screened: {dt.strftime('%d %b %Y, %H:%M:%S IST')}"
+    except Exception:
+        return "Not screened yet"
+
+
+def render_welcome_banner():
+    """Renders dynamic Welcome Banner with live IST clock and today's verified activity metrics."""
+    latest_analytics = registry.get_dashboard_analytics_summary()
+    current_ist_str = get_current_ist_str()
+    render_html(
+        f"""
+        <div class="welcome-banner-target">
+            <div class="welcome-left-col">
+                <h2 class="welcome-title-target">Welcome back, Bharat!</h2>
+                <p class="welcome-sub-target">Screen candidates, track progress, and get AI-powered insights.</p>
+                <div class="welcome-clock-pill">
+                    <span style="font-size: 13px;">🕒</span>
+                    <span style="font-weight: 700; color: #10234E; font-size: 11.5px; letter-spacing: 0.1px;">{current_ist_str}</span>
+                </div>
+            </div>
+            <div class="welcome-center-col">
+                {render_welcome_illustration()}
+            </div>
+            <div class="welcome-right-col">
+                <div class="activity-summary-card-target">
+                    <div class="activity-header-label">Today's Activity</div>
+                    <div class="activity-flex-row">
+                        <div class="activity-col-item">
+                            <span class="activity-val-num" style="color: #2164F3;">{latest_analytics['total_screened']}</span>
+                            <span class="activity-lbl-text">Screened</span>
+                        </div>
+                        <div class="activity-vdivider"></div>
+                        <div class="activity-col-item">
+                            <span class="activity-val-num" style="color: #16A765;">{latest_analytics['shortlisted_count']}</span>
+                            <span class="activity-lbl-text">Shortlisted</span>
+                        </div>
+                        <div class="activity-vdivider"></div>
+                        <div class="activity-col-item">
+                            <span class="activity-val-num" style="color: #7C4DFF;">{latest_analytics['interviews_scheduled_count']}</span>
+                            <span class="activity-lbl-text">Interview</span>
+                        </div>
+                        <div class="activity-vdivider"></div>
+                        <div class="activity-col-item">
+                            <span class="activity-val-num" style="color: #06A6C8;">{latest_analytics['joined_count']}</span>
+                            <span class="activity-lbl-text">Joined</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """
+    )
+
+
+if hasattr(st, "fragment"):
+    render_welcome_banner = st.fragment(run_every="5s")(render_welcome_banner)
+
+
 def render_html(raw_html: str) -> None:
     """Safely render HTML in Streamlit.
     Strips leading and trailing whitespace from each line so the CommonMark
@@ -1123,6 +1298,8 @@ def show_full_candidate_profile_dialog(active_rec: dict):
 
     cand_db = registry.get_candidate_by_id(cand_id) if cand_id else None
     cur_status = cand_db.get("current_status", "Screened") if cand_db else "Screened"
+    cand_last_ts = active_rec.get("screening_timestamp") or (registry.get_candidate_last_screened_timestamp(cand_id) if cand_id else None)
+    cand_last_screened_str = format_last_screened(cand_last_ts)
 
     st.markdown(
         f"""
@@ -1130,7 +1307,7 @@ def show_full_candidate_profile_dialog(active_rec: dict):
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <h3 style="margin: 0; color: #10234E; font-size: 18px; font-weight: 800;">{html.escape(meta.get('name', 'Candidate'))}</h3>
-                    <p style="margin: 2px 0 0 0; color: #64748B; font-size: 13px;">{html.escape(meta.get('current_designation', 'Not Detected'))} • {html.escape(meta.get('organization', 'Not Detected'))}</p>
+                    <p style="margin: 2px 0 0 0; color: #64748B; font-size: 13px;">{html.escape(meta.get('current_designation', 'Not Detected'))} • {html.escape(meta.get('organization', 'Not Detected'))} • <span style="color: #2164F3; font-weight: 600;">{cand_last_screened_str}</span></p>
                 </div>
                 <div style="text-align: right;">
                     <div style="font-size: 11px; color: #64748B; font-weight: 700;">FITMENT SCORE</div>
@@ -1150,6 +1327,7 @@ def show_full_candidate_profile_dialog(active_rec: dict):
             st.markdown(f"- **Total Experience:** {meta.get('total_exp', 'Not Detected')}")
             st.markdown(f"- **Relevant Experience:** {meta.get('relevant_exp', 'Not Detected')}")
             st.markdown(f"- **Location:** {meta.get('location', 'Not Specified')}")
+            st.markdown(f"- **Screening History:** {cand_last_screened_str}")
         with c2:
             raw_mob = meta.get('mobile', '+91 91457 *****')
             masked_mob = re.sub(r'(\+?\d{2,4}\s?\d{2,3})\d{4,5}', r'\1*****', raw_mob) if raw_mob else '+91 91457 *****'
@@ -1190,13 +1368,13 @@ def show_full_candidate_profile_dialog(active_rec: dict):
 
     st.markdown("---")
     if st.button("📋 Open in Candidate Tracker", key="dlg_open_tracker_btn", use_container_width=True):
-        st.session_state.sidebar_nav_radio = "📋 Candidate Tracker"
-        st.session_state.selected_nav = "📋 Candidate Tracker"
+        st.session_state.pending_nav = "📋 Candidate Tracker"
+        st.session_state.tracker_reset_filters = True
         st.rerun()
 
 
 # --- LOAD REAL DASHBOARD ANALYTICS (ZERO MOCK DATA) ---
-if not hasattr(registry, "get_dashboard_analytics_summary"):
+if not hasattr(registry, "get_current_ist_str") or not hasattr(registry, "format_last_screened"):
     import importlib
     registry = importlib.reload(registry)
 
@@ -1223,6 +1401,12 @@ with st.sidebar:
 
     # 1. Left Navigation
     st.markdown("<p style='font-size: 11px; text-transform: uppercase; font-weight: 700; color: #536789; margin: 0 0 6px 8px; letter-spacing: 0.5px;'>Navigation</p>", unsafe_allow_html=True)
+
+    # Safe navigation: apply and clear pending navigation before creating the radio widget
+    if st.session_state.get("pending_nav"):
+        target_nav = st.session_state.pop("pending_nav")
+        st.session_state.sidebar_nav_radio = target_nav
+        st.session_state.selected_nav = target_nav
 
     if "selected_nav" not in st.session_state:
         st.session_state.selected_nav = "🏠 Screening Dashboard"
@@ -1499,7 +1683,7 @@ with head_col3:
             st.rerun()
     with hr2:
         if st.button("⚙️ Settings", key="top_settings_btn", help="AI service configuration & connectivity", use_container_width=True):
-            st.session_state.selected_nav = "⚙️ Settings"
+            st.session_state.pending_nav = "⚙️ Settings"
             st.rerun()
     with hr3:
         st.markdown(
@@ -1544,75 +1728,17 @@ with col_workspace:
     # VIEW 1: SCREENING DASHBOARD
     # --------------------------------------------------------------------------
     if chosen_nav == "🏠 Screening Dashboard":
-        # Initialize default screening state from database ONLY ONCE on initial session load (loads Prachi Gupta matching Screenshot B)
-        if not st.session_state.get("initial_dashboard_seeded", False):
-            st.session_state.initial_dashboard_seeded = True
-            try:
-                prachi = registry.find_candidate_by_name("Prachi Gupta")
-                if prachi:
-                    p_screens = registry.get_candidate_screenings(prachi["candidate_id"])
-                    if p_screens:
-                        ls = p_screens[0]
-                        m_skills = json.loads(ls["matched_skills"]) if isinstance(ls["matched_skills"], str) else ls["matched_skills"]
-                        miss_skills = json.loads(ls["missing_skills"]) if isinstance(ls["missing_skills"], str) else ls["missing_skills"]
-                        ev = json.loads(ls["evidence"]) if isinstance(ls.get("evidence"), str) else ls.get("evidence", {})
-                        iq = json.loads(ls["interview_questions"]) if isinstance(ls.get("interview_questions"), str) else ls.get("interview_questions", [])
-
-                        det_res = {
-                            "match_score": ls["deterministic_score"],
-                            "skills_score": ls["skills_score"],
-                            "experience_score": ls["exp_score"],
-                            "certification_score": ls["cert_score"],
-                            "skills_matched": m_skills,
-                            "missing_skills": miss_skills,
-                            "supporting_evidence": ev,
-                            "interview_questions": iq,
-                            "verdict": ls["verdict"],
-                            "recommendation": ls["recommendation"],
-                            "total_experience_detected": prachi.get("total_experience", "3+ Years"),
-                        }
-                        st.session_state.active_screening_record = {
-                            "candidate_id": prachi["candidate_id"],
-                            "screening_id": ls["screening_id"],
-                            "meta": {
-                                "name": prachi["name"],
-                                "current_designation": prachi.get("current_designation", "Network Analyst"),
-                                "organization": prachi.get("current_organization", "Cisco"),
-                                "total_exp": prachi.get("total_experience", "3+ Years"),
-                                "relevant_exp": prachi.get("relevant_experience", "~1+ Years"),
-                                "mobile": prachi.get("mobile", "+91 91457 37256"),
-                                "email": prachi.get("email", "prachirgup08@gmail.com"),
-                                "location": prachi.get("location", "Pune, India"),
-                                "education": prachi.get("education", "Bachelor of Engineering (B.E.) Pune University, Pune, India 2020"),
-                                "previous_organizations": json.loads(prachi["previous_organizations"]) if isinstance(prachi.get("previous_organizations"), str) else prachi.get("previous_organizations", []),
-                                "certifications": json.loads(prachi["certifications"]) if isinstance(prachi.get("certifications"), str) else prachi.get("certifications", []),
-                            },
-                            "det_result": det_res,
-                            "skills_score": 32,
-                            "exp_score": 40,
-                            "cert_score": 0,
-                            "found_certs": [],
-                            "job_title": "Cisco Network Voice L3",
-                            "ai_text": ls.get("llm_analysis", ""),
-                            "provider": ls.get("llm_provider", "InstantFit AI Screening Engine"),
-                            "model": ls.get("llm_model", "gemini-2.5-pro"),
-                        }
-                        st.session_state.active_candidate_id = prachi["candidate_id"]
-                        st.session_state.active_candidate_name = prachi["name"]
-                        st.session_state.last_parsed_jd_name = "JD-Cisco Network Voice L3(1).docx"
-                        st.session_state.jd_file_size_kb = 31.4
-                        st.session_state.jd_text_val = ls.get("job_description", "")
-                        st.session_state.last_parsed_cv_name = "Prachi CV.pdf"
-                        st.session_state.cv_file_size_kb = 620.4
-                        try:
-                            cv_bytes = storage.read_stored_file_bytes("data/resumes/PRACHI_GUPTA_1c16bcf5.pdf")
-                            cv_txt, _ = parser.extract_text_from_file(cv_bytes, "Prachi CV.pdf")
-                            if cv_txt:
-                                st.session_state.cv_text_val = cv_txt
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+        # Clean session state initialization: Workspace starts completely empty without default JD or CV
+        if "workspace_initialized" not in st.session_state:
+            st.session_state.workspace_initialized = True
+            st.session_state.jd_text_val = ""
+            st.session_state.last_parsed_jd_name = None
+            st.session_state.cv_text_val = ""
+            st.session_state.last_parsed_cv_name = None
+            st.session_state.active_screening_record = None
+            st.session_state.active_candidate_id = None
+            st.session_state.active_candidate_name = None
+            st.session_state.pending_candidate_meta = None
 
         if "jd_text_val" not in st.session_state:
             st.session_state.jd_text_val = ""
@@ -1621,46 +1747,8 @@ with col_workspace:
         if "active_screening_record" not in st.session_state:
             st.session_state.active_screening_record = None
 
-        # Welcome Banner with real activity counts (Pixel-Faithful to Screenshot B)
-        render_html(
-            f"""
-            <div class="welcome-banner-target">
-                <div class="welcome-left-col">
-                    <h2 class="welcome-title-target">Welcome back, Bharat!</h2>
-                    <p class="welcome-sub-target">Screen candidates, track progress, and get AI-powered insights.</p>
-                </div>
-                <div class="welcome-center-col">
-                    {render_welcome_illustration()}
-                </div>
-                <div class="welcome-right-col">
-                    <div class="activity-summary-card-target">
-                        <div class="activity-header-label">Today's Activity</div>
-                        <div class="activity-flex-row">
-                            <div class="activity-col-item">
-                                <span class="activity-val-num" style="color: #2164F3;">{analytics['total_screened']}</span>
-                                <span class="activity-lbl-text">Screened</span>
-                            </div>
-                            <div class="activity-vdivider"></div>
-                            <div class="activity-col-item">
-                                <span class="activity-val-num" style="color: #16A765;">{analytics['shortlisted_count']}</span>
-                                <span class="activity-lbl-text">Shortlisted</span>
-                            </div>
-                            <div class="activity-vdivider"></div>
-                            <div class="activity-col-item">
-                                <span class="activity-val-num" style="color: #7C4DFF;">{analytics['interviews_scheduled_count']}</span>
-                                <span class="activity-lbl-text">Interview</span>
-                            </div>
-                            <div class="activity-vdivider"></div>
-                            <div class="activity-col-item">
-                                <span class="activity-val-num" style="color: #06A6C8;">{analytics['joined_count']}</span>
-                                <span class="activity-lbl-text">Joined</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            """
-        )
+        # Welcome Banner with real activity counts and live IST clock (Pixel-Faithful to Screenshot B)
+        render_welcome_banner()
 
         # --- TWO CONTENT-DRIVEN PANELS (MATCHING SCREENSHOT B) ---
         col_p1, col_p2 = st.columns(2, gap="medium")
@@ -1697,12 +1785,12 @@ with col_workspace:
                 saved_jds = storage.list_saved_job_descriptions()
                 if saved_jds:
                     jd_choices = {f"{j['original_filename']} ({str(j.get('upload_timestamp') or j.get('uploaded_at') or '')[:10]}) [ID:{str(j.get('file_id') or '')[:8]}]": j for j in saved_jds}
-                    sel_saved_jd_key = st.selectbox("Select saved JD", options=["-- Select to Load --"] + list(jd_choices.keys()), key="sel_saved_jd_opt")
-                    if sel_saved_jd_key != "-- Select to Load --":
+                    sel_saved_jd_key = st.selectbox("Select saved JD", options=["-- Select a JD to load --"] + list(jd_choices.keys()), key="sel_saved_jd_opt")
+                    if sel_saved_jd_key != "-- Select a JD to load --":
                         chosen_jd = jd_choices[sel_saved_jd_key]
-                        lj_c1, lj_c2 = st.columns([2, 1])
+                        lj_c1, lj_c2 = st.columns([1.6, 1.4], vertical_alignment="center")
                         with lj_c1:
-                            if st.button("Load Selected JD", key="load_saved_jd_act_btn", use_container_width=True):
+                            if st.button("Load Selected JD", key="load_saved_jd_act_btn", type="primary", use_container_width=True):
                                 try:
                                     stored_p = chosen_jd.get("stored_path") or chosen_jd.get("stored_relative_path")
                                     if stored_p:
@@ -1714,7 +1802,7 @@ with col_workspace:
                                             st.session_state.active_jd_file_id = chosen_jd.get("file_id")
                                             st.session_state.active_jd_file_path = stored_p
                                             st.session_state.jd_file_size_kb = round(len(raw_bytes) / 1024, 1)
-                                            st.session_state.flash_jd_notification = ("success", f'Load JD "{chosen_jd["original_filename"]}" successfully!')
+                                            st.session_state.flash_jd_notification = ("success", f"Loaded JD: {chosen_jd['original_filename']} successfully.")
                                             st.session_state.active_screening_record = None
                                             st.session_state.show_load_jd_expander = False
                                             st.rerun()
@@ -1726,19 +1814,21 @@ with col_workspace:
                                     st.session_state.flash_jd_notification = ("error", f"Error loading JD: {err}")
                                     st.rerun()
                         with lj_c2:
-                            if st.button("🗑️ Delete", key="del_saved_jd_act_btn", help="Permanently delete this saved JD from storage", use_container_width=True):
-                                ok = storage.delete_saved_job_description(chosen_jd["file_id"])
-                                if ok:
-                                    if st.session_state.get("active_jd_file_id") == chosen_jd["file_id"]:
-                                        st.session_state.jd_text_val = ""
-                                        st.session_state.pop("last_parsed_jd_name", None)
-                                        st.session_state.pop("active_jd_file_id", None)
-                                        st.session_state.active_screening_record = None
-                                    st.session_state.flash_jd_notification = ("success", f'Deleted JD "{chosen_jd["original_filename"]}" from storage.')
-                                    st.session_state.show_load_jd_expander = False
-                                    st.rerun()
-                                else:
-                                    st.error("Could not delete saved JD.")
+                            confirm_del = st.checkbox("Confirm delete", key=f"conf_del_jd_{chosen_jd['file_id']}")
+                            if confirm_del:
+                                if st.button("🗑️ Delete", key="del_saved_jd_act_btn", help="Permanently delete this saved JD from storage", use_container_width=True):
+                                    ok = storage.delete_saved_job_description(chosen_jd["file_id"])
+                                    if ok:
+                                        if st.session_state.get("active_jd_file_id") == chosen_jd["file_id"]:
+                                            st.session_state.jd_text_val = ""
+                                            st.session_state.pop("last_parsed_jd_name", None)
+                                            st.session_state.pop("active_jd_file_id", None)
+                                            st.session_state.active_screening_record = None
+                                        st.session_state.flash_jd_notification = ("success", f'Deleted JD "{chosen_jd["original_filename"]}" from storage.')
+                                        st.session_state.show_load_jd_expander = False
+                                        st.rerun()
+                                    else:
+                                        st.error("Could not delete saved JD.")
                 else:
                     st.info("No saved Job Descriptions found in registry storage.")
 
@@ -1749,15 +1839,15 @@ with col_workspace:
                     render_html(
                         f"""
                         <div class="file-chip-saved">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <div style="width: 32px; height: 32px; border-radius: 6px; background: #2563EB; color: #FFFFFF; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center;">W</div>
-                                <div>
-                                    <div style="color: #10234E; font-weight: 700; font-size: 13.5px;">{html.escape(st.session_state.last_parsed_jd_name)}</div>
-                                    <div style="color: #64748B; font-size: 11px;">{st.session_state.get('jd_file_size_kb', 31.4)} KB | Uploaded on 18 Oct 2026, 11:24 AM</div>
+                            <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+                                <div style="width: 32px; height: 32px; min-width: 32px; border-radius: 6px; background: #2563EB; color: #FFFFFF; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center;">W</div>
+                                <div style="min-width: 0; flex: 1; overflow: hidden;">
+                                    <div style="color: #10234E; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px;" title="{html.escape(st.session_state.last_parsed_jd_name)}">{html.escape(st.session_state.last_parsed_jd_name)}</div>
+                                    <div style="color: #64748B; font-size: 11px;">{st.session_state.get('jd_file_size_kb', 31.4)} KB | Active Job Description</div>
                                 </div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="background: #DCFCE7; color: #16A765; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; border: 1px solid #86EFAC;">✓ Saved Successfully</span>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: 8px;">
+                                <span style="background: #DCFCE7; color: #16A765; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; border: 1px solid #86EFAC; white-space: nowrap;">✓ Loaded</span>
                             </div>
                         </div>
                         """
@@ -1770,10 +1860,18 @@ with col_workspace:
                         st.session_state.pop("active_jd_file_id", None)
                         st.session_state.pop("jd_status", None)
                         st.session_state.active_screening_record = None
-                        st.session_state.flash_jd_notification = ("success", "Cleared Job Description selection.")
+                        st.session_state.flash_jd_notification = ("success", "Cleared Job Description selection (saved file preserved).")
                         st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
             else:
+                render_html(
+                    """
+                    <div style="background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; color: #64748B; font-size: 12.5px; font-weight: 500;">
+                        <span style="font-size: 15px;">ℹ️</span>
+                        <span>No JD selected — upload or load a saved JD</span>
+                    </div>
+                    """
+                )
                 uploaded_jd = st.file_uploader(
                     "Upload Job Description (.pdf, .docx, .doc, .txt)",
                     type=["pdf", "docx", "doc", "txt"],
@@ -1803,7 +1901,7 @@ with col_workspace:
                                     st.session_state.jd_text_val = extracted_jd
                                     st.session_state.last_parsed_jd_name = uploaded_jd.name
                                     st.session_state.jd_file_size_kb = round(len(raw_bytes) / 1024, 1)
-                                    st.session_state.flash_jd_notification = ("success", f'Load JD "{uploaded_jd.name}" successfully!')
+                                    st.session_state.flash_jd_notification = ("success", f"Loaded JD: {uploaded_jd.name} successfully.")
                                     st.session_state.active_screening_record = None
                                     st.rerun()
                                 else:
@@ -1858,12 +1956,12 @@ with col_workspace:
                 saved_resumes = storage.list_saved_resumes()
                 if saved_resumes:
                     res_choices = {f"{r.get('candidate_name') or r['original_filename']} — {r['original_filename']} ({str(r.get('upload_timestamp') or r.get('uploaded_at') or '')[:10]}) [ID:{str(r.get('file_id') or '')[:8]}]": r for r in saved_resumes}
-                    sel_saved_res_key = st.selectbox("Select saved Resume", options=["-- Select to Load --"] + list(res_choices.keys()), key="sel_saved_res_opt")
-                    if sel_saved_res_key != "-- Select to Load --":
+                    sel_saved_res_key = st.selectbox("Select saved Resume", options=["-- Select a resume to load --"] + list(res_choices.keys()), key="sel_saved_res_opt")
+                    if sel_saved_res_key != "-- Select a resume to load --":
                         chosen_res = res_choices[sel_saved_res_key]
-                        lr_c1, lr_c2 = st.columns([2, 1])
+                        lr_c1, lr_c2 = st.columns([1.6, 1.4], vertical_alignment="center")
                         with lr_c1:
-                            if st.button("Load Selected Resume", key="load_saved_res_act_btn", use_container_width=True):
+                            if st.button("Load Selected Resume", key="load_saved_res_act_btn", type="primary", use_container_width=True):
                                 try:
                                     stored_p = chosen_res.get("stored_path") or chosen_res.get("stored_relative_path")
                                     if stored_p:
@@ -1876,7 +1974,7 @@ with col_workspace:
                                             st.session_state.active_resume_file_path = stored_p
                                             st.session_state.cv_file_size_kb = round(len(raw_bytes) / 1024, 1)
 
-                                            # CRUCIAL: Invalidate previous candidate's screening results to prevent data leakage
+                                            # Invalidate previous screening record so old scores/results are never displayed
                                             st.session_state.active_screening_record = None
 
                                             # Extract metadata for newly loaded candidate
@@ -1890,62 +1988,7 @@ with col_workspace:
                                             st.session_state.active_candidate_id = chosen_res.get("candidate_id")
                                             st.session_state.pending_candidate_meta = cv_meta
 
-                                            # Check if this candidate already has an existing screening for the active JD
-                                            cand_rec = registry.find_candidate_by_name(st.session_state.active_candidate_name)
-                                            if cand_rec and st.session_state.get("jd_text_val"):
-                                                c_screens = registry.get_candidate_screenings(cand_rec["candidate_id"])
-                                                match_sc = None
-                                                for sc in c_screens:
-                                                    if sc.get("job_description") and sc["job_description"].strip() == st.session_state.jd_text_val.strip():
-                                                        match_sc = sc
-                                                        break
-                                                if match_sc:
-                                                    ls = match_sc
-                                                    m_skills = json.loads(ls["matched_skills"]) if isinstance(ls["matched_skills"], str) else ls["matched_skills"]
-                                                    miss_skills = json.loads(ls["missing_skills"]) if isinstance(ls["missing_skills"], str) else ls["missing_skills"]
-                                                    ev = json.loads(ls["evidence"]) if isinstance(ls.get("evidence"), str) else ls.get("evidence", {})
-                                                    iq = json.loads(ls["interview_questions"]) if isinstance(ls.get("interview_questions"), str) else ls.get("interview_questions", [])
-                                                    det_res = {
-                                                        "match_score": ls["deterministic_score"],
-                                                        "skills_score": ls["skills_score"],
-                                                        "experience_score": ls["exp_score"],
-                                                        "certification_score": ls["cert_score"],
-                                                        "skills_matched": m_skills,
-                                                        "missing_skills": miss_skills,
-                                                        "supporting_evidence": ev,
-                                                        "interview_questions": iq,
-                                                        "verdict": ls["verdict"],
-                                                        "recommendation": ls["recommendation"],
-                                                        "total_experience_detected": cand_rec.get("total_experience", "3+ Years"),
-                                                    }
-                                                    st.session_state.active_screening_record = {
-                                                        "candidate_id": cand_rec["candidate_id"],
-                                                        "screening_id": ls["screening_id"],
-                                                        "meta": {
-                                                            "name": cand_rec["name"],
-                                                            "current_designation": cand_rec.get("current_designation", "Technical Specialist"),
-                                                            "organization": cand_rec.get("current_organization", "Cisco"),
-                                                            "total_exp": cand_rec.get("total_experience", "3+ Years"),
-                                                            "relevant_exp": cand_rec.get("relevant_experience", "~1+ Years"),
-                                                            "mobile": cand_rec.get("mobile", "+91 91457 *****"),
-                                                            "email": cand_rec.get("email", "candidate@fitment.ai"),
-                                                            "location": cand_rec.get("location", "Pune, India"),
-                                                            "education": cand_rec.get("education", "Bachelor of Engineering"),
-                                                            "previous_organizations": json.loads(cand_rec["previous_organizations"]) if isinstance(cand_rec.get("previous_organizations"), str) else cand_rec.get("previous_organizations", []),
-                                                            "certifications": json.loads(cand_rec["certifications"]) if isinstance(cand_rec.get("certifications"), str) else cand_rec.get("certifications", []),
-                                                        },
-                                                        "det_result": det_res,
-                                                        "skills_score": ls.get("skills_score", 32),
-                                                        "exp_score": ls.get("exp_score", 40),
-                                                        "cert_score": ls.get("cert_score", 0),
-                                                        "found_certs": [],
-                                                        "job_title": ls.get("job_title", "Target Role"),
-                                                        "ai_text": ls.get("llm_analysis", ""),
-                                                        "provider": ls.get("llm_provider", "InstantFit AI Screening Engine"),
-                                                        "model": ls.get("llm_model", "gemini-2.5-pro"),
-                                                    }
-
-                                            st.session_state.flash_cv_notification = ("success", f'Load CV "{chosen_res["original_filename"]}" successfully!')
+                                            st.session_state.flash_cv_notification = ("success", f"Loaded CV: {chosen_res['original_filename']} successfully.")
                                             st.session_state.show_load_cv_expander = False
                                             st.rerun()
                                         else:
@@ -1956,22 +1999,24 @@ with col_workspace:
                                     st.session_state.flash_cv_notification = ("error", f"Error loading Resume: {err}")
                                     st.rerun()
                         with lr_c2:
-                            if st.button("🗑️ Delete", key="del_saved_res_act_btn", help="Permanently delete this saved Resume from storage", use_container_width=True):
-                                ok = storage.delete_saved_resume(chosen_res["file_id"])
-                                if ok:
-                                    if st.session_state.get("active_resume_file_id") == chosen_res["file_id"]:
-                                        st.session_state.cv_text_val = ""
-                                        st.session_state.pop("last_parsed_cv_name", None)
-                                        st.session_state.pop("active_resume_file_id", None)
-                                        st.session_state.pop("active_candidate_id", None)
-                                        st.session_state.pop("active_candidate_name", None)
-                                        st.session_state.pop("pending_candidate_meta", None)
-                                        st.session_state.active_screening_record = None
-                                    st.session_state.flash_cv_notification = ("success", f'Deleted Resume "{chosen_res["original_filename"]}" from storage.')
-                                    st.session_state.show_load_cv_expander = False
-                                    st.rerun()
-                                else:
-                                    st.error("Could not delete saved Resume.")
+                            confirm_del_res = st.checkbox("Confirm delete", key=f"conf_del_res_{chosen_res['file_id']}")
+                            if confirm_del_res:
+                                if st.button("🗑️ Delete", key="del_saved_res_act_btn", help="Permanently delete this saved Resume from storage", use_container_width=True):
+                                    ok = storage.delete_saved_resume(chosen_res["file_id"])
+                                    if ok:
+                                        if st.session_state.get("active_resume_file_id") == chosen_res["file_id"]:
+                                            st.session_state.cv_text_val = ""
+                                            st.session_state.pop("last_parsed_cv_name", None)
+                                            st.session_state.pop("active_resume_file_id", None)
+                                            st.session_state.pop("active_candidate_id", None)
+                                            st.session_state.pop("active_candidate_name", None)
+                                            st.session_state.pop("pending_candidate_meta", None)
+                                            st.session_state.active_screening_record = None
+                                        st.session_state.flash_cv_notification = ("success", f'Deleted Resume "{chosen_res["original_filename"]}" from storage.')
+                                        st.session_state.show_load_cv_expander = False
+                                        st.rerun()
+                                    else:
+                                        st.error("Could not delete saved Resume.")
                 else:
                     st.info("No saved candidate resumes found in registry storage.")
 
@@ -1982,15 +2027,15 @@ with col_workspace:
                     render_html(
                         f"""
                         <div class="file-chip-saved">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <div style="width: 32px; height: 32px; border-radius: 6px; background: #DC2626; color: #FFFFFF; font-weight: 800; font-size: 11px; display: flex; align-items: center; justify-content: center;">PDF</div>
-                                <div>
-                                    <div style="color: #10234E; font-weight: 700; font-size: 13.5px;">{html.escape(st.session_state.last_parsed_cv_name)}</div>
-                                    <div style="color: #64748B; font-size: 11px;">{st.session_state.get('cv_file_size_kb', 620.4)} KB | Uploaded on 18 Oct 2026, 11:26 AM</div>
+                            <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+                                <div style="width: 32px; height: 32px; min-width: 32px; border-radius: 6px; background: #DC2626; color: #FFFFFF; font-weight: 800; font-size: 11px; display: flex; align-items: center; justify-content: center;">PDF</div>
+                                <div style="min-width: 0; flex: 1; overflow: hidden;">
+                                    <div style="color: #10234E; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px;" title="{html.escape(st.session_state.last_parsed_cv_name)}">{html.escape(st.session_state.last_parsed_cv_name)}</div>
+                                    <div style="color: #64748B; font-size: 11px;">{st.session_state.get('cv_file_size_kb', 620.4)} KB | Active Resume</div>
                                 </div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="background: #DCFCE7; color: #16A765; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; border: 1px solid #86EFAC;">✓ Saved Successfully</span>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: 8px;">
+                                <span style="background: #DCFCE7; color: #16A765; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; border: 1px solid #86EFAC; white-space: nowrap;">✓ Loaded</span>
                             </div>
                         </div>
                         """
@@ -2006,10 +2051,18 @@ with col_workspace:
                         st.session_state.pop("pending_candidate_meta", None)
                         st.session_state.pop("cv_status", None)
                         st.session_state.active_screening_record = None
-                        st.session_state.flash_cv_notification = ("success", "Cleared Candidate Resume selection.")
+                        st.session_state.flash_cv_notification = ("success", "Cleared Candidate Resume selection (saved file preserved).")
                         st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
             else:
+                render_html(
+                    """
+                    <div style="background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; color: #64748B; font-size: 12.5px; font-weight: 500;">
+                        <span style="font-size: 15px;">ℹ️</span>
+                        <span>No resume selected — upload or load a saved resume</span>
+                    </div>
+                    """
+                )
                 uploaded_cv = st.file_uploader(
                     "Upload Candidate CV (.pdf, .docx, .doc, .txt)",
                     type=["pdf", "docx", "doc", "txt"],
@@ -2050,7 +2103,7 @@ with col_workspace:
                                     st.session_state.active_candidate_name = cv_meta.get("name") or "Candidate"
                                     st.session_state.active_candidate_id = None
                                     st.session_state.pending_candidate_meta = cv_meta
-                                    st.session_state.flash_cv_notification = ("success", f'Load CV "{uploaded_cv.name}" successfully!')
+                                    st.session_state.flash_cv_notification = ("success", f"Loaded CV: {uploaded_cv.name} successfully.")
                                     st.rerun()
                                 else:
                                     st.session_state.flash_cv_notification = ("error", "❌ Uploaded resume contains no extractable text.")
@@ -2083,8 +2136,12 @@ with col_workspace:
             curr_jd = st.session_state.jd_text_val.strip()
             curr_cv = st.session_state.cv_text_val.strip()
 
-            if not curr_jd or not curr_cv:
+            if not curr_jd and not curr_cv:
                 st.warning("⚠️ Please provide both a Job Description and a Candidate Resume to initiate screening.")
+            elif not curr_jd:
+                st.warning("⚠️ Job Description is missing. Please upload or load a target Job Description to screen against.")
+            elif not curr_cv:
+                st.warning("⚠️ Candidate Resume is missing. Please upload or load a Candidate Resume to initiate screening.")
             else:
                 with st.spinner("⚡ Running authoritative deterministic evaluation..."):
                     det_result = deterministic_engine.evaluate_candidate_deterministically(
@@ -2191,9 +2248,11 @@ with col_workspace:
                 )
 
                 # Store complete active record in session state with found_certs explicitly saved
+                cand_screen_ts = registry.get_candidate_last_screened_timestamp(cand_id)
                 st.session_state.active_screening_record = {
                     "candidate_id": cand_id,
                     "screening_id": screening_id,
+                    "screening_timestamp": cand_screen_ts,
                     "meta": meta,
                     "det_result": det_result,
                     "skills_score": skills_score,
@@ -2234,15 +2293,18 @@ with col_workspace:
                 mobile_val = '+91 91457 37256'
 
             # 5. CANDIDATE SUMMARY CARD (PIXEL-FAITHFUL TO SCREENSHOT B)
+            cand_last_ts = active_rec.get("screening_timestamp") or (registry.get_candidate_last_screened_timestamp(active_rec.get("candidate_id")) if active_rec.get("candidate_id") else None)
+            cand_last_screened_str = format_last_screened(cand_last_ts)
+
             st.markdown('<div class="candidate-summary-card-target">', unsafe_allow_html=True)
             cs_col1, cs_col2 = st.columns([0.76, 0.24], vertical_alignment="center")
             with cs_col1:
-                render_html("""
+                render_html(f"""
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 18px; color: #2164F3;">📄</span>
                         <div>
                             <h3 style="margin: 0; color: #10234E; font-size: 16.5px; font-weight: 800; letter-spacing: -0.2px;">Candidate Summary</h3>
-                            <p style="margin: 2px 0 0 0; color: #64748B; font-size: 12px;">Key information extracted from the resume. Update recruitment status as per your process.</p>
+                            <p style="margin: 2px 0 0 0; color: #64748B; font-size: 12px;">Key information extracted from resume. <span style="color: #2164F3; font-weight: 600;">{cand_last_screened_str}</span></p>
                         </div>
                     </div>
                 """)
@@ -2533,20 +2595,32 @@ with col_workspace:
             # Detailed report tabs for deeper inspection & dossier download
             st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
             with st.expander("📊 Detailed Competency Breakdown, Interview Strategy & Dossier Export", expanded=st.session_state.get("expand_detailed_analysis", False)):
-                sub_tab_status, sub_tab_dossier, sub_tab_ai, sub_tab_sum, sub_tab_skills, sub_tab_exp, sub_tab_questions, sub_tab_export = st.tabs(
-                    [
-                        "📝 Candidate Lifecycle & Notes",
-                        "🔍 Full Dossier & Profile",
-                        "🤖 InstantFit AI Screening",
-                        "🎯 Executive Summary & Verdict",
-                        "🛠️ Technical Skills Alignment",
-                        "⏳ Experience & Seniority",
-                        "🎤 Interview Strategy",
-                        "📥 Export Fitment Dossier",
-                    ]
-                )
+                breakdown_tab_options = [
+                    "📝 Candidate Lifecycle & Notes",
+                    "🔍 Full Dossier & Profile",
+                    "🤖 InstantFit AI Screening",
+                    "🎯 Executive Summary & Verdict",
+                    "🛠️ Technical Skills Alignment",
+                    "⏳ Experience & Seniority",
+                    "🎤 Interview Strategy",
+                    "📥 Export Fitment Dossier",
+                ]
+                tab_sel_key = f"detailed_breakdown_tab_sel_{active_rec['candidate_id']}"
+                if tab_sel_key not in st.session_state or st.session_state[tab_sel_key] not in breakdown_tab_options:
+                    st.session_state[tab_sel_key] = breakdown_tab_options[0]
 
-                with sub_tab_status:
+                selected_sub_tab = st.pills(
+                    "Competency Breakdown Navigation",
+                    options=breakdown_tab_options,
+                    selection_mode="single",
+                    label_visibility="collapsed",
+                    key=tab_sel_key,
+                )
+                if not selected_sub_tab:
+                    selected_sub_tab = breakdown_tab_options[0]
+                    st.session_state[tab_sel_key] = breakdown_tab_options[0]
+
+                if selected_sub_tab == "📝 Candidate Lifecycle & Notes":
                     st.markdown("### 📝 Update Candidate Recruitment Lifecycle Status")
                     stat_c1, stat_c2, stat_c3 = st.columns([3, 3, 2])
                     with stat_c1:
@@ -2584,7 +2658,7 @@ with col_workspace:
                             else:
                                 st.info(f"Candidate is already marked as '{current_saved_status}'.")
 
-                with sub_tab_dossier:
+                elif selected_sub_tab == "🔍 Full Dossier & Profile":
                     st.markdown("### 🔍 Full Candidate Profile & Dossier Information")
                     prev_orgs_str = ", ".join(meta.get("previous_organizations", [])) if meta.get("previous_organizations") else "None recorded"
                     certs_str = ", ".join(found_certs) if found_certs else "None detected"
@@ -2599,7 +2673,7 @@ with col_workspace:
                         """
                     )
 
-                with sub_tab_ai:
+                elif selected_sub_tab == "🤖 InstantFit AI Screening":
                     st.markdown("### 🤖 InstantFit AI Screening Analysis")
                     st.caption(f"Provider: **{active_rec['provider']}** | Model: `{active_rec['model']}` | Persistent Screening ID: `{active_rec['screening_id']}`")
                     if ai_text:
@@ -2617,7 +2691,7 @@ with col_workspace:
                             "Deterministic evaluation metrics, keyword coverage, and interview probes are displayed in the adjacent tabs."
                         )
 
-                with sub_tab_sum:
+                elif selected_sub_tab == "🎯 Executive Summary & Verdict":
                     st.markdown("### 📋 Executive Summary & Fitment Matrix")
                     mcol1, mcol2, mcol3 = st.columns(3)
                     with mcol1:
@@ -2639,7 +2713,7 @@ with col_workspace:
                         """
                     )
 
-                with sub_tab_skills:
+                elif selected_sub_tab == "🛠️ Technical Skills Alignment":
                     col_match, col_gap = st.columns(2, gap="large")
                     with col_match:
                         st.markdown(f"#### ✅ Matched Core Skills ({len(det['skills_matched'])})")
@@ -2665,7 +2739,7 @@ with col_workspace:
                                 for snip in snippets:
                                     st.markdown(f"> *\"{snip}\"*")
 
-                with sub_tab_exp:
+                elif selected_sub_tab == "⏳ Experience & Seniority":
                     st.markdown("#### ⏳ Seniority & Experience Breakdown")
                     st.info(f"**Tenure Assessment:** {det.get('experience_assessment', 'Analyzed by deterministic engine')}")
                     st.markdown(f"- **Total Experience:** {meta['total_exp']}")
@@ -2680,7 +2754,7 @@ with col_workspace:
                     else:
                         st.warning("No standard recognized Cisco, Cloud, or ITIL certifications found in candidate text.")
 
-                with sub_tab_questions:
+                elif selected_sub_tab == "🎤 Interview Strategy":
                     st.markdown("#### 🎙️ Targeted Technical Interview Probes")
                     probes = det.get("interview_questions", [])
                     for idx, p_text in enumerate(probes):
@@ -2691,7 +2765,7 @@ with col_workspace:
                             unsafe_allow_html=True,
                         )
 
-                with sub_tab_export:
+                elif selected_sub_tab == "📥 Export Fitment Dossier":
                     st.markdown("#### 📥 Export Candidate Fitment Dossier")
                     clean_name = meta["name"].replace(" ", "_").replace(".", "")
                     dossier_md = f"""# Recruitment Intelligence Platform — Candidate Fitment Dossier
@@ -2880,25 +2954,41 @@ with col_workspace:
                 if due_today_list:
                     st.warning(f"⚡ **{len(due_today_list)} Follow-up(s) Due Today:** " + ", ".join([f"{f['candidate_name']}" for f in due_today_list[:3]]))
 
+        # Reset filters if navigated from View All action
+        if st.session_state.pop("tracker_reset_filters", False):
+            st.session_state["tracker_search_query"] = ""
+            st.session_state["tracker_filter_status"] = "All"
+            st.session_state["tracker_filter_job"] = "All"
+            st.session_state["tracker_score_range"] = 0
+            st.session_state["tracker_filter_fu"] = "All"
+
         # Filters and Search Bar
         fcol1, fcol2, fcol3 = st.columns([3, 2, 2])
         with fcol1:
-            search_query = st.text_input("🔍 Search Candidates", placeholder="Search by name, email, phone, or role...")
+            search_query = st.text_input("🔍 Search Candidates", placeholder="Search by name, email, phone, or role...", key="tracker_search_query")
         with fcol2:
             status_options = ["All"] + registry.CANDIDATE_STATUSES
-            filter_status = st.selectbox("📌 Recruitment Status Filter", options=status_options, index=0)
+            st_cur = st.session_state.get("tracker_filter_status", "All")
+            st_idx = status_options.index(st_cur) if st_cur in status_options else 0
+            filter_status = st.selectbox("📌 Recruitment Status Filter", options=status_options, index=st_idx, key="tracker_filter_status")
         with fcol3:
             distinct_jobs = ["All"] + registry.get_distinct_target_jobs()
-            filter_job = st.selectbox("🎯 Target Role Filter", options=distinct_jobs, index=0)
+            job_cur = st.session_state.get("tracker_filter_job", "All")
+            job_idx = distinct_jobs.index(job_cur) if job_cur in distinct_jobs else 0
+            filter_job = st.selectbox("🎯 Target Role Filter", options=distinct_jobs, index=job_idx, key="tracker_filter_job")
 
         fcol4, fcol5, fcol6 = st.columns([2, 2, 3])
         with fcol4:
-            score_range = st.slider("Min Fitment Score", 0, 100, 0)
+            score_range = st.slider("Min Fitment Score", 0, 100, value=int(st.session_state.get("tracker_score_range", 0)), key="tracker_score_range")
         with fcol5:
+            fu_options = ["All", "Overdue", "Due Today", "Upcoming", "Has Follow-up", "No Follow-up"]
+            fu_cur = st.session_state.get("tracker_filter_fu", "All")
+            fu_idx = fu_options.index(fu_cur) if fu_cur in fu_options else 0
             filter_fu = st.selectbox(
                 "📅 Follow-Up Filter",
-                options=["All", "Overdue", "Due Today", "Upcoming", "Has Follow-up", "No Follow-up"],
-                index=0,
+                options=fu_options,
+                index=fu_idx,
+                key="tracker_filter_fu",
             )
         with fcol6:
             st.markdown("<br>", unsafe_allow_html=True)
@@ -2923,6 +3013,7 @@ with col_workspace:
                 score_badge = f"🎯 {c_score}/100" if c_score is not None else "⚡ Not Screened"
                 c_status = cand.get("current_status", "Screened")
                 badge_html = get_status_badge_html(c_status)
+                cand_screen_ts_str = format_last_screened(cand.get("screening_timestamp"))
 
                 with st.expander(f"👤 {cand['name']} | Role: {cand.get('current_designation', 'N/A')} | {score_badge} | Status: {c_status}", expanded=False):
                     pcol1, pcol2 = st.columns([2, 1])
@@ -2939,6 +3030,7 @@ with col_workspace:
                             - **Total Experience:** {cand.get('total_experience', 'Not Detected')}
                             - **Latest Fitment Verdict:** {cand.get('verdict', 'N/A')}
                             - **Target Role:** {cand.get('job_title', 'Not specified')}
+                            - **Last Screened:** {cand_screen_ts_str}
                             """
                         )
 
@@ -2970,6 +3062,7 @@ with col_workspace:
                                     st.session_state.active_screening_record = {
                                         "candidate_id": cand["candidate_id"],
                                         "screening_id": ls["screening_id"],
+                                        "screening_timestamp": ls.get("screening_timestamp"),
                                         "meta": {
                                             "name": cand_full["name"],
                                             "current_designation": cand_full.get("current_designation", "Network Analyst"),
@@ -2998,7 +3091,7 @@ with col_workspace:
                                 st.session_state.last_parsed_cv_name = cand["name"]
                                 st.session_state.active_candidate_id = cand["candidate_id"]
                                 st.session_state.active_candidate_name = cand["name"]
-                                st.session_state.selected_nav = "🏠 Screening Dashboard"
+                                st.session_state.pending_nav = "🏠 Screening Dashboard"
                                 st.rerun()
 
                         with b_col2:
@@ -3320,8 +3413,8 @@ with col_chat:
         st.markdown("<span style='font-size: 14px; font-weight: 800; color: #10234E;'>🕒 Recently Viewed Candidates</span>", unsafe_allow_html=True)
     with rc_btn_col:
         if st.button("View All ➔", key="rc_view_all_action_btn", help="Open complete candidate directory", use_container_width=True):
-            st.session_state.sidebar_nav_radio = "📋 Candidate Tracker"
-            st.session_state.selected_nav = "📋 Candidate Tracker"
+            st.session_state.pending_nav = "📋 Candidate Tracker"
+            st.session_state.tracker_reset_filters = True
             st.rerun()
 
     recent_list = analytics.get("recent_candidates", [])
@@ -3332,6 +3425,8 @@ with col_chat:
             rc_status = rc.get("current_status", "Screened")
             rc_role = rc.get("target_role") or rc.get("current_designation") or "Technical Candidate"
             time_str = get_relative_time_str(rc.get("updated_at") or rc.get("last_activity_time"))
+            rc_screen_ts = rc.get("screening_timestamp") or (registry.get_candidate_last_screened_timestamp(rc["candidate_id"]) if rc.get("candidate_id") else None)
+            rc_last_screened = format_last_screened(rc_screen_ts)
 
             col_rc_info, col_rc_btn = st.columns([0.84, 0.16], vertical_alignment="center")
             with col_rc_info:
@@ -3344,6 +3439,7 @@ with col_chat:
                                 <div style="overflow: hidden;">
                                     <strong style="color: #10234E; font-size: 13.5px; display: block; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">{html.escape(rc['name'])}</strong>
                                     <span style="color: #64748B; font-size: 11.5px; display: block; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">{html.escape(rc_role[:20])} | {score_badge}</span>
+                                    <span style="color: #64748B; font-size: 10.5px; display: block; line-height: 1.2; margin-top: 2px;">{rc_last_screened}</span>
                                 </div>
                             </div>
                             <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
