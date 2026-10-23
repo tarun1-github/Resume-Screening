@@ -26,10 +26,10 @@ app = FastAPI(
     description="Deterministic resume screening and keyword evidence extractor. 100% offline rule-based scoring.",
 )
 
-# Enable CORS for local cross-origin testing
+# Enable CORS for local cross-origin testing with secure origin regex
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,6 +43,58 @@ class ScreenTextRequest(BaseModel):
         default=None,
         description="Optional scoring weights: skills, exp, edu, extras.",
     )
+
+
+class CandidateMetadata(BaseModel):
+    name: str = "Candidate Profile"
+    mobile: Optional[str] = "Not available in CV"
+    email: Optional[str] = "Not Specified"
+    location: Optional[str] = "Not Specified"
+    dob: Optional[str] = "Not Specified"
+    total_exp: Optional[str] = "Not Specified"
+    relevant_exp: Optional[str] = "Not Specified"
+    organization: Optional[str] = "Not Detected (Requires human verification)"
+    current_designation: Optional[str] = "Not Detected (Requires human verification)"
+    previous_organizations: List[str] = Field(default_factory=list)
+    education: Optional[str] = "Not Detected (Requires human verification)"
+    certifications: List[str] = Field(default_factory=list)
+
+    model_config = {"extra": "allow"}
+
+
+class SkillGapItem(BaseModel):
+    skill: str
+    rationale: str
+    tier: Optional[str] = None
+
+    model_config = {"extra": "allow"}
+
+
+class SkillGapsAnalysis(BaseModel):
+    has_data: bool
+    message: Optional[str] = None
+    mandatory_gaps: List[SkillGapItem] = Field(default_factory=list)
+    preferred_gaps: List[SkillGapItem] = Field(default_factory=list)
+    core_gaps: List[SkillGapItem] = Field(default_factory=list)
+    matched_skills: List[str] = Field(default_factory=list)
+    undetermined_skills: List[str] = Field(default_factory=list)
+    prioritized_gaps: List[SkillGapItem] = Field(default_factory=list)
+
+    model_config = {"extra": "allow"}
+
+
+class GroundedRecommendation(BaseModel):
+    status: str
+    action: str
+    score: int
+    summary: str
+    strengths: List[str] = Field(default_factory=list)
+    gaps: List[str] = Field(default_factory=list)
+    interview_probes: List[str] = Field(default_factory=list)
+    is_llm: bool = False
+    engine_label: str
+
+    model_config = {"extra": "allow"}
 
 
 class ScreeningResponse(BaseModel):
@@ -59,8 +111,13 @@ class ScreeningResponse(BaseModel):
     certifications_detected: List[str]
     interview_questions: List[str]
     human_review_required: bool
-    metadata: Dict[str, Any]
+    metadata: CandidateMetadata = Field(default_factory=CandidateMetadata)
     status: str
+    skill_gaps_analysis: Optional[SkillGapsAnalysis] = None
+    grounded_recommendation: Optional[GroundedRecommendation] = None
+
+    model_config = {"extra": "allow"}
+
 
 
 @app.get("/health", status_code=status.HTTP_200_OK)
@@ -102,25 +159,30 @@ def _process_screen_text(payload: ScreenTextRequest) -> Dict[str, Any]:
         )
 
     # 3. Validate Optional Weights
-    if payload.weights is not None:
-        if not isinstance(payload.weights, dict):
+    weights = payload.weights
+    if weights is not None:
+        if not isinstance(weights, dict):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Weights must be a dictionary with numeric keys: skills, exp, edu, extras.",
             )
-        for k, v in payload.weights.items():
-            if not isinstance(v, (int, float)) or v < 0:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Weight for '{k}' must be a non-negative number.",
-                )
+        # An empty dictionary {} indicates weights were omitted in form/connector -> use defaults
+        if len(weights) == 0:
+            weights = None
+        else:
+            for k, v in weights.items():
+                if not isinstance(v, (int, float)) or v < 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Weight for '{k}' must be a non-negative number.",
+                    )
 
     # 4. Execute Deterministic Evaluation
     try:
         result = evaluate_candidate_deterministically(
             jd_text=clean_jd,
             resume_text=clean_resume,
-            weights=payload.weights,
+            weights=weights,
         )
         return result
     except parser.EmptyDocumentError as err:
@@ -158,5 +220,9 @@ def screen_text_alias(payload: ScreenTextRequest) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True)
+    host = os.getenv("FITMENT_API_HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", os.getenv("FITMENT_API_PORT", "8000")))
+    uvicorn.run("api:app", host=host, port=port, reload=True)
+

@@ -1,0 +1,486 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "FITMENT.AI Screening API",
+    "version": "1.0.0",
+    "description": "FITMENT.AI deterministic resume screening service integrated with Microsoft Power Platform, Power Automate, and Copilot Studio. 100% offline rule-based scoring with zero external LLM dependencies.",
+    "contact": {
+      "name": "FITMENT.AI Architecture Team",
+      "url": "https://github.com/tarun1-github/Resume-Screening"
+    }
+  },
+  "host": "127.0.0.1:8001",
+  "basePath": "/",
+  "schemes": [
+    "http"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "GetHealthStatus",
+        "summary": "Health Check",
+        "description": "Verifies service availability and zero-LLM operational mode.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object",
+              "title": "Response Health Check Health Get"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/screen-text": {
+      "post": {
+        "operationId": "ScreenCandidateText",
+        "summary": "Screen Candidate Text",
+        "description": "Evaluates candidate resume text against job description text deterministically. Returns score, matched/missing skills, citations, and interview probes.",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "description": "Screening request payload containing job description and resume text.",
+            "schema": {
+              "$ref": "#/definitions/ScreenTextRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "$ref": "#/definitions/ScreeningResponse"
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            }
+          }
+        },
+        "x-ms-visibility": "important"
+      }
+    }
+  },
+  "definitions": {
+    "CandidateMetadata": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "Name",
+          "default": "Candidate Profile"
+        },
+        "mobile": {
+          "type": "string",
+          "title": "Mobile"
+        },
+        "email": {
+          "type": "string",
+          "title": "Email"
+        },
+        "location": {
+          "type": "string",
+          "title": "Location"
+        },
+        "dob": {
+          "type": "string",
+          "title": "Dob"
+        },
+        "total_exp": {
+          "type": "string",
+          "title": "Total Exp"
+        },
+        "relevant_exp": {
+          "type": "string",
+          "title": "Relevant Exp"
+        },
+        "organization": {
+          "type": "string",
+          "title": "Organization"
+        },
+        "current_designation": {
+          "type": "string",
+          "title": "Current Designation"
+        },
+        "previous_organizations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Previous Organizations"
+        },
+        "education": {
+          "type": "string",
+          "title": "Education"
+        },
+        "certifications": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Certifications"
+        }
+      },
+      "additionalProperties": true,
+      "type": "object",
+      "title": "CandidateMetadata"
+    },
+    "GroundedRecommendation": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "title": "Status",
+          "x-ms-summary": "Response Status"
+        },
+        "action": {
+          "type": "string",
+          "title": "Action"
+        },
+        "score": {
+          "type": "integer",
+          "title": "Score"
+        },
+        "summary": {
+          "type": "string",
+          "title": "Summary"
+        },
+        "strengths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Strengths"
+        },
+        "gaps": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Gaps"
+        },
+        "interview_probes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Interview Probes"
+        },
+        "is_llm": {
+          "type": "boolean",
+          "title": "Is Llm",
+          "default": false
+        },
+        "engine_label": {
+          "type": "string",
+          "title": "Engine Label"
+        }
+      },
+      "additionalProperties": true,
+      "type": "object",
+      "required": [
+        "status",
+        "action",
+        "score",
+        "summary",
+        "engine_label"
+      ],
+      "title": "GroundedRecommendation"
+    },
+    "HTTPValidationError": {
+      "properties": {
+        "detail": {
+          "items": {
+            "$ref": "#/definitions/ValidationError"
+          },
+          "type": "array",
+          "title": "Detail"
+        }
+      },
+      "type": "object",
+      "title": "HTTPValidationError"
+    },
+    "ScreenTextRequest": {
+      "properties": {
+        "job_description": {
+          "type": "string",
+          "title": "Job Description",
+          "description": "Target Job Description text.",
+          "x-ms-summary": "Job Description Text"
+        },
+        "resume_text": {
+          "type": "string",
+          "title": "Resume Text",
+          "description": "Candidate Resume plain text.",
+          "x-ms-summary": "Candidate Resume Plain Text"
+        },
+        "weights": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object",
+          "title": "Weights",
+          "description": "Optional scoring weights: skills, exp, edu, extras.",
+          "x-ms-summary": "Scoring Weights (Optional)"
+        }
+      },
+      "type": "object",
+      "required": [
+        "job_description",
+        "resume_text"
+      ],
+      "title": "ScreenTextRequest"
+    },
+    "ScreeningResponse": {
+      "properties": {
+        "candidate_name": {
+          "type": "string",
+          "title": "Candidate Name",
+          "x-ms-summary": "Candidate Name"
+        },
+        "match_score": {
+          "type": "integer",
+          "title": "Match Score",
+          "x-ms-summary": "Match Score (0-100)"
+        },
+        "score_type": {
+          "type": "string",
+          "title": "Score Type",
+          "x-ms-summary": "Scoring Methodology"
+        },
+        "verdict": {
+          "type": "string",
+          "title": "Verdict",
+          "x-ms-summary": "Screening Verdict"
+        },
+        "recommendation": {
+          "type": "string",
+          "title": "Recommendation",
+          "x-ms-summary": "Recruitment Recommendation"
+        },
+        "skills_matched": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Skills Matched",
+          "x-ms-summary": "Skills Matched"
+        },
+        "missing_skills": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Missing Skills",
+          "x-ms-summary": "Missing Skills"
+        },
+        "supporting_evidence": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object",
+          "title": "Supporting Evidence",
+          "x-ms-summary": "Supporting Evidence Quotes"
+        },
+        "total_experience_detected": {
+          "type": "string",
+          "title": "Total Experience Detected",
+          "x-ms-summary": "Total Experience Detected"
+        },
+        "experience_assessment": {
+          "type": "string",
+          "title": "Experience Assessment",
+          "x-ms-summary": "Experience Assessment"
+        },
+        "certifications_detected": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Certifications Detected",
+          "x-ms-summary": "Certifications Detected"
+        },
+        "interview_questions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Interview Questions",
+          "x-ms-summary": "Targeted Interview Questions"
+        },
+        "human_review_required": {
+          "type": "boolean",
+          "title": "Human Review Required",
+          "x-ms-summary": "Human Review Required Flag"
+        },
+        "metadata": {
+          "$ref": "#/definitions/CandidateMetadata",
+          "x-ms-summary": "Candidate Profile Metadata"
+        },
+        "status": {
+          "type": "string",
+          "title": "Status",
+          "x-ms-summary": "Response Status"
+        },
+        "skill_gaps_analysis": {
+          "$ref": "#/definitions/SkillGapsAnalysis",
+          "x-ms-summary": "Skill Gaps Breakdown"
+        },
+        "grounded_recommendation": {
+          "$ref": "#/definitions/GroundedRecommendation",
+          "x-ms-summary": "Grounded Recommendation Details"
+        }
+      },
+      "additionalProperties": true,
+      "type": "object",
+      "required": [
+        "candidate_name",
+        "match_score",
+        "score_type",
+        "verdict",
+        "recommendation",
+        "skills_matched",
+        "missing_skills",
+        "supporting_evidence",
+        "total_experience_detected",
+        "experience_assessment",
+        "certifications_detected",
+        "interview_questions",
+        "human_review_required",
+        "status"
+      ],
+      "title": "ScreeningResponse"
+    },
+    "SkillGapItem": {
+      "properties": {
+        "skill": {
+          "type": "string",
+          "title": "Skill"
+        },
+        "rationale": {
+          "type": "string",
+          "title": "Rationale"
+        },
+        "tier": {
+          "type": "string",
+          "title": "Tier"
+        }
+      },
+      "additionalProperties": true,
+      "type": "object",
+      "required": [
+        "skill",
+        "rationale"
+      ],
+      "title": "SkillGapItem"
+    },
+    "SkillGapsAnalysis": {
+      "properties": {
+        "has_data": {
+          "type": "boolean",
+          "title": "Has Data"
+        },
+        "message": {
+          "type": "string",
+          "title": "Message"
+        },
+        "mandatory_gaps": {
+          "items": {
+            "$ref": "#/definitions/SkillGapItem"
+          },
+          "type": "array",
+          "title": "Mandatory Gaps"
+        },
+        "preferred_gaps": {
+          "items": {
+            "$ref": "#/definitions/SkillGapItem"
+          },
+          "type": "array",
+          "title": "Preferred Gaps"
+        },
+        "core_gaps": {
+          "items": {
+            "$ref": "#/definitions/SkillGapItem"
+          },
+          "type": "array",
+          "title": "Core Gaps"
+        },
+        "matched_skills": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Matched Skills"
+        },
+        "undetermined_skills": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Undetermined Skills"
+        },
+        "prioritized_gaps": {
+          "items": {
+            "$ref": "#/definitions/SkillGapItem"
+          },
+          "type": "array",
+          "title": "Prioritized Gaps"
+        }
+      },
+      "additionalProperties": true,
+      "type": "object",
+      "required": [
+        "has_data"
+      ],
+      "title": "SkillGapsAnalysis"
+    },
+    "ValidationError": {
+      "properties": {
+        "loc": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Location"
+        },
+        "msg": {
+          "type": "string",
+          "title": "Message"
+        },
+        "type": {
+          "type": "string",
+          "title": "Error Type"
+        },
+        "input": {
+          "title": "Input"
+        },
+        "ctx": {
+          "type": "object",
+          "title": "Context"
+        }
+      },
+      "type": "object",
+      "required": [
+        "loc",
+        "msg",
+        "type"
+      ],
+      "title": "ValidationError"
+    }
+  }
+}
